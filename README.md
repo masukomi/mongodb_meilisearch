@@ -1,0 +1,362 @@
+# MongodbMeilisearch
+
+A simple gem for integrating Meilisearch into Ruby† applications that are backed by MongoDB.
+
+NOTE: this should _not_ be considered production ready. There is essentially not automated 
+testing. That being said, I use it on a daily basis and will actively fix any issues that come up.
+
+
+
+† It's currently limited to Rails apps, but hopefully that will change soon. 
+
+
+## Installation
+
+Install the gem and add to the application's Gemfile by executing:
+
+    $ bundle add mongodb_meilisearch
+
+If bundler is not being used to manage dependencies, install the gem by executing:
+
+    $ gem install mongodb_meilisearch
+
+## Usage
+
+A high level overview of working with our Meilisearch integration. More details can be found in the classes under `app/lib/search`
+
+### Pre-Requisites
+
+- [Meilisearch](https://www.meilisearch.com)
+- [MongoDB](https://www.mongodb.com/)
+- Some classes that `include Mongoid::Document`
+
+### Configuration
+
+Define the following variables in your environment (or `.env` file if you're using `dotenv`). 
+The url below is the default one Meilisearch uses when run locally.
+
+```bash
+SEARCH_ENABLED=true
+MEILISEARCH_API_KEY=<your api key here>
+MEILISEARCH_URL=http://127.0.0.1:7700
+
+# optional configuration
+MEILISEARCH_TIMEOUT=10
+MEILISEARCH_MAX_RETRIES=2
+```
+
+## Model Integration
+
+Add the following near the top of your model. Only the `extend` and `include` lines are required.
+This assumes your model also includes `Mongoid::Document`
+
+```ruby
+  extend Search::ClassMethods
+  include Search::InstanceMethods
+```
+
+If you want Rails to auto-add records to the search index, add the following to your model. 
+You can override these if needed.
+
+```ruby
+  # enabled?() is controlled by the SEARCH_ENABLED environment variable
+  if Search::Client.instance.enabled?
+    after_create  :add_to_search
+    after_update  :update_in_search
+    after_destroy :remove_from_search
+  end
+```
+
+Assuming you've done the above a new index will be created with a name that corresponds to your model's 
+name, only in snake case. All of your models attributes will be indexed and filterable.
+
+
+### Going Beyond The Defaults 
+This module strives for sensible defaults, but you can override them with
+the following optional constants:
+
+* `PRIMARY_SEARCH_KEY` - a Symbol matching one of your model's attributes that is guaranteed unique
+* `SEARCH_INDEX_NAME` - a String - useful if you want to have records from
+  multiple classes come back in the same search results.
+* `SEARCH_OPTIONS` - a hash of key value pairs in js style
+    - See  the [meilisearch search parameter docs](https://www.meilisearch.com/docs/reference/api/search#search-parameters) for details.
+    - example from [meliesearch's `multi_param_spec`](https://github.com/meilisearch/meilisearch-ruby/blob/main/spec/meilisearch/index/search/multi_params_spec.rb)
+  ```ruby
+      {
+        attributesToCrop: ['title'],
+        cropLength: 2,
+        filter: 'genre = adventure',
+        attributesToHighlight: ['title'],
+        limit: 2
+      }
+    ```
+* `SEARCH_RANKING_RULES` - an array of strings that correspond to meilisearch rules
+  see [meilisearch ranking rules docs](https://www.meilisearch.com/docs/learn/core_concepts/relevancy#ranking-rules)
+You probably don't want to change this.
+
+
+## Indexes
+
+Searching is limited to records that have been added to a given index. This means, 
+if you want to perform one search and get back records from multiple models you'll need to 
+add them to the same index.
+
+In order to do that add the `SEARCH_INDEX_NAME` constant to the model whose search stuff you want to end up in the same index.
+
+```ruby
+  SEARCH_INDEX_NAME='general_search'
+```
+Unless you can guarantee that there won't any overlap in IDs between the two models you should also 
+add `CLASS_PREFIXED_SEARCH_IDS=true`. This causes the `id` field to 
+be `<ClassName>_<_id>` For example, a `Note` record might have an 
+index of `"Note_64274543906b1d7d02c1fcc6"`. If undefined this will default to `false`
+
+```ruby
+  CLASS_PREFIXED_SEARCH_IDS=true
+```
+
+Setting `CLASS_PREFIXED_SEARCH_IDS` to `true` will also cause the original Mongoid `_id` field to be indexed
+as `original_document_id`. This is useful if you want to be able to retrieve the original record from the database.
+
+### Searchable Data
+You probably don't want to index _all_ the fields. For example, 
+unless you intend to allow users to sort by when a record was created, 
+there's no point in recording it's `created_at` in the search index. 
+It'll just waste bandwidth, memory, and disk space.
+
+Define a `SEARCHABLE_ATTRIBUTES` constant with an array of strings to limit things. 
+By default these will _also_ be the fields you can filter on. Note that 
+Meilisearch requires there to be an `id` field and it must be a string. 
+If you don't define one it will use string version of the `_id` your 
+document's `BSON::ObjectId`. 
+
+```ruby
+  # explicitly define the fields you want to be searchable
+  SEARCHABLE_ATTRIBUTES = %w[title body]
+  # OR explicitly define the fields you DON'T want searchable 
+  SEARCHABLE_ATTRIBUTES = searchable_attributes - ['created_at']
+```
+
+#### Getting Extra Specific
+If your searchable data needs to by dynamically generated instead of 
+just taken directly from the `Mongoid::Document`'s attributes you can
+define a `search_indexable_hash` method on your class. This method 
+must return a hash, and that hash must include the following keys:
+- `"id"` - a string that uniquely identifies the record
+- `"object_class"` the name of the class that this record corresponds to.
+
+The value of `"object_class"` is usually just `self.class.name`. Additionally,
+this is something specific to this gem, and not Meilisearch itself.
+
+See `InstanceMethods#search_indexable_hash` for an example. 
+
+#### Filterable Fields
+If you'd like to only be able to filter on a subset of those then 
+you can define `FILTERABLE_ATTRIBUTE_NAMES` but it _must_ be a subset 
+of `SEARCHABLE_ATTRIBUTES`. This is enforced by the gem to guarantee
+no complaints from Meilisearch.
+
+If you have no direct need for filterable results, 
+set `UNFILTERABLE_IN_SEARCH=true` in your model. This will save
+on index size and speed up indexing, but you won't be able to filter
+search results, and that's half of what makes Meilisearch so great. 
+It should be noted, that even if this _is_ set to `true` this gem
+will still add `"object_class"` as a filterable attribute. 
+
+This is the magic that allows you to have an index shared by multiple
+models and still be able to retrieve results specifically for one. 
+
+If you decide to re-enable filtering you can remove that constant, or set it to false.
+Then call the following. If `FILTERABLE_ATTRIBUTE_NAMES` is defined it will use that,
+otherwise it will use whatever `.searchable_attributes` returns.
+
+```ruby
+MyModel.set_filterable_attributes!
+``` 
+
+This will cause Meilisearch to reindex all the records for that index. If you
+have a large number of records this could take a while. Consider running it
+on a background thread. Note that filtering is managed at the index level, not the individual
+record level. By setting filterable attributes you're giving Meilisearch
+guidance on what to do when indexing your data.
+
+
+
+### Indexing things
+Note: all of the following methods run asynchronously in Meilisearch. 
+You won't find out if they fail. To run them synchronously 
+and receive the response from the server, pass in `false` 
+for the optional `async` parameter.
+
+For example: 
+```ruby
+MyModel.reindex! # runs asyncronously
+# vs 
+MyModel.reindex!(async: false) # runs synchronously
+```
+
+#### Reindexing, Adding, Updating, and Deleting
+
+**Reindexing**  
+Calling `MyModel.reindex!` deletes all the existing records from the current index,
+and then reindexes all the records for the current model. It's safe to run this
+even if there aren't any records. 
+
+Note: reindexing happens semi-asynchronously by default. It will first, 
+attempt to synchronously delete all the records from the index. If that
+fails an exception will be raised. Otherwise you'd think everything was
+fine when actually it had failed miserably. If you call `.reindex!(async: false)` 
+it will be entirely synchronous.
+
+**Adding**  
+Be careful to not add documents that are already in the index. 
+
+- Add everything: `MyClass.add_all_to_search`
+- Add a specific instance: `my_instance.add_to_search`
+- Add a specific subset of documents: `MyClass.add_documents(documents_hash)`
+  IMPORTANT: `documents_hash` must be an array of hashes that were generated 
+  via `search_indexable_hash`
+
+**Updating**  
+- Update everything: call `reindex!`
+- Update a specific instance: `my_instance.update_in_search`
+- Update a specific subset of documents: `MyClass.update_documents(documents_hash)`
+  IMPORTANT: `documents_hash` must be an array of hashes that were generated
+  via `search_indexable_hash`
+
+
+**Deleting**  
+- Delete everything: `MyClass.delete_all_documents!`
+- Delete a specific record: `my_instance.remove_from_search`
+- Delete the index: `MyClass.delete_index!`  
+  WARNING: if you think you should use this, you're probably 
+  mistaken.
+
+#### Shared indexes
+Imagine you have a `Note` and a `Comment` model, sharing an index so that
+you can perform a single search and have search results for both models
+that are ranked by relevance.
+
+In this case both models would define a `SEARCH_INDEX_NAME` constant with the
+same value.
+
+Then, when you search you can say `Note.search("search term")` and it will _only_ 
+bring back results for `Note` records. If you want to include results that match 
+`Comment` records too, you can set the optional `filtered_by_class` parameter to `false`.
+
+For example: `Note.search("search term", filtered_by_class: false)` 
+will return all matching `Note` results, as well as results for _all_ the 
+other models that share the same index as `Note`.
+
+## Searching
+
+To get a list of all the matching objects in the order returned by the search engine 
+run `MyModel.search("search term")` Note that this will restrict the results to 
+records generated by the model you're calling this on. If you have an index 
+that contains data from multiple models and wish to include all of them in 
+the results pass in the optional `filtered_by_class` parameter with a `false` value.
+E.g. `MyModel.search("search term", filtered_by_class: false)`
+
+Searching returns a hash, with the class name of the results as the key and an array of 
+String ids, or `Mongoid::Document` objects as the value. By default it assumes you want
+`Mongoid::Document` objects. The returned hash _also_ includes a key 
+of `"search_result_metadata"` which includes the metadata provided by Meilisearch regarding
+your request. You'll need this for pagination if you have lots of results. To _exclude_ 
+the metadata pass `include_metadata: false` as an option. 
+E.g. `MyModel.search("search term", include_metadata: false)`
+
+```ruby
+Note.search('foo')
+# returns 
+{ 
+  "Note" => [
+    #<Note _id: 64274a5d906b1d7d02c1fcc7, created_at: 2023-03-15 00:00:00 UTC, updated_at: 2023-03-31 21:02:21.108 UTC, title: "A note from the past", body: "a body", type: "misc", context: "dachary">,
+    #<Note _id: 643f5e1c906b1d60f9763071, created_at: 2023-04-18 00:00:00 UTC, updated_at: 2023-04-19 03:21:00.41 UTC, title: "offline standup ", body: "onother body", type: "misc", context: "WORK">,
+    #<Note _id: 64483e63906b1d84f149717a, created_at: 2023-04-25 00:00:00 UTC, updated_at: 2023-04-26 11:23:38.125 UTC, title: "Standup Notes (for wed)", body: "very full bodied", type: "misc", context: "WORK">
+  ],
+  "search_result_metadata" => {
+          "query"=>query_string, "processingTimeMs"=>1, "limit"=>50,
+          "offset"=>0, "estimatedTotalHits"=>33, "nbHits"=>33
+  }
+}
+```
+
+To just return the IDs of those objects in the same order invoke it like this:
+`MyModel.search("search term", ids_only: true)`
+
+
+```ruby
+Note.search('foo', ids_only: true)
+# returns 
+{
+  "Note" => [
+    "64274a5d906b1d7d02c1fcc7",
+    "643f5e1c906b1d60f9763071",
+    "64483e63906b1d84f149717a"
+  ],
+  "search_result_metadata" => {
+    "query"=>query_string, "processingTimeMs"=>1, "limit"=>50,
+    "offset"=>0, "estimatedTotalHits"=>33, "nbHits"=>33
+  }
+}
+```
+
+### Custom Search Options
+
+To invoke any of Meilisearch's custom search options (see [their documentation](https://www.meilisearch.com/docs/reference/api/search)). You can pass them in via an options hash.
+
+`MyModel.search("search term", options: <my custom options>)`
+
+The Meilisearch-ruby gem should be able to convert keys from snake case to 
+camel case. For example `hits_per_page` will become `hitsPerPage`. 
+Meilisearch ultimately wants camel case. Follow their documentation 
+to see what's available and what type of options to pass it. Note that your 
+options keys and values must all be simple JSON values.
+
+If for some reason that still isn't enough, you can work with the 
+meilisearch-ruby index directly via 
+`Search::Client.instance.index(search_index_name)`
+
+#### Pagination
+This gem has no specific pagination handling, as there are multiple libraries for
+handling pagination in Ruby. Here's an example of how to get started
+with [Pagy](https://github.com/ddnexus/pagy).
+
+```ruby
+current_page_number = 1
+max_items_per_page = 10
+
+search_results = Note.search('foo')
+
+Pagy.new(
+    count: search_results["search_result_metadata"]["nbHits"], 
+    page: current_page_number, 
+    items: max_items_per_page
+)
+```
+
+## Development
+
+- Run `bundle install` to install all the dependencies. 
+- Start hacking. 
+- Add RSpec tests.
+- Make PR.
+
+To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
+
+Bug reports and pull requests are welcome on GitHub at
+https://github.com/masukomi/mongodb_meilisearch. 
+This project is intended to be a safe, welcoming space for collaboration, 
+and contributors are expected to adhere to the 
+[code of conduct](https://github.com/masukomi/mongodb_meilisearch/blob/main/CODE_OF_CONDUCT.md).
+
+## License
+
+The gem is available as open source under the terms of the 
+[MIT License](https://opensource.org/licenses/MIT).
+
+## Code of Conduct
+
+Everyone interacting in this project's codebases, issue trackers, 
+chat rooms and mailing lists is expected to follow the
+[code of conduct](https://github.com/masukomi/mongodb_meilisearch/blob/main/CODE_OF_CONDUCT.md).
