@@ -21,25 +21,35 @@ module Search
     # * SEARCH_RANKING_RULES - an array of strings that correspond to meilisearch rules
     #     see https://www.meilisearch.com/docs/learn/core_concepts/relevancy#ranking-rules
     #   - you probably don't want to muck with this
+    #
+    # NOTE: It should be self-evident from the method names which ones modify state. As such
+    # this class uses ! to indicate synchronous methods and no ! to indicate async methods.
+    # You'll probably want to restrict your use of ! methods to the console or rake tasks.
 
-      # the default search ranking rules from https://www.meilisearch.com/docs/learn/core_concepts/relevancy#ranking-rules
-    MEILISEARCH_DEFAULT_SEARCH_RANKING_RULES =  %w[
-        words
-        typo
-        proximity
-        attribute
-        sort
-        exactness
-      ]
-    MEILISEARCH_RESPONSE_METADATA_KEYS       =  %w[
-        query
-        processingTimeMs
-        limit
-        offset
-        estimatedTotalHits
-        nbHits
-      ]
+    # the default search ranking rules from https://www.meilisearch.com/docs/learn/core_concepts/relevancy#ranking-rules
+    MEILISEARCH_DEFAULT_SEARCH_RANKING_RULES = %w[
+      words
+      typo
+      proximity
+      attribute
+      sort
+      exactness
+    ]
 
+    # Every MeiliSearch response has these keys
+    # we group them in a hash named search_result_metadata
+    MEILISEARCH_RESPONSE_METADATA_KEYS = %w[
+      query
+      processingTimeMs
+      limit
+      offset
+      estimatedTotalHits
+      nbHits
+    ]
+
+    # The unique identifier for your document. This is almost
+    # always going to be :id but you can override it by setting
+    # the PRIMARY_SEARCH_KEY constant in your model.
     def primary_search_key
       # this is almost _never_ going to be defined
       return :id unless constants.include?(:PRIMARY_SEARCH_KEY)
@@ -47,18 +57,16 @@ module Search
     end
 
     # By default each class has its own search index which is the class name run through `.underscore`
+    # For example MyClass would become my_class.
     # If you'd like to search across multiple classes define a custom SEARCH_INDEX_NAME constant
     # and have all the classes you'd like to search across use the same value.
     # @return [String] the name of the search index for this class
     def search_index_name
-      return @@_class_index_name if defined?(@@_class_index_name)
-
       class_index_name = constants.include?(:SEARCH_INDEX_NAME) \
                          ? const_get(:SEARCH_INDEX_NAME) \
                          : name.to_s.underscore
       raise "Invalid search index name for #{self.class.name}: \"#{custom_name}\"" if class_index_name.blank?
-      @@_class_index_name = class_index_name
-      @@_class_index_name
+      class_index_name
     end
 
     # @return [MeiliSearch::Index] the search index for this class
@@ -71,7 +79,7 @@ module Search
     # for more details
     # https://www.meilisearch.com/docs/learn/core_concepts/relevancy#ranking-rules
     #
-    # You can override this by definining a SEARCH_RANKING_RULES constant on your class
+    # You can override this by defining a SEARCH_RANKING_RULES constant on your class
     # that returns an array of strings that correspond to meilisearch rules.
     #
     # @return [Array[String]] an array of strings that correspond to meilisearch rules
@@ -112,7 +120,8 @@ module Search
     # - offset [Integer]
     # - estimatedTotalHits [Integer]
     # - nbHits [Integer]
-    def search(search_string, options: search_options,
+    def search(search_string,
+               options: search_options,
                ids_only: false,
                filtered_by_class: true,
                include_metadata: true)
@@ -129,7 +138,6 @@ module Search
         end
       end
       filter_search_options_by_class!(options) if filtered_by_class
-
 
       # response looks like this
       # - normally there are more fields in "hits" hashes
@@ -154,12 +162,11 @@ module Search
         end
       end
 
-
       populate_results_from_ids!(
         results,
         # Meilisearch doesn't like a primary key
         # of _id but Mongoid wants _id
-        (pk == :id ? :_id : pk)
+        ((pk == :id) ? :_id : pk)
       )
 
       if include_metadata
@@ -169,7 +176,9 @@ module Search
       end
     end
 
-
+    # adds a filter to the options to restrict results to those with
+    # a matching object_class field. This is useful when you have multiple
+    # model's records in the same index and want to restrict results to just one class.
     def filter_search_options_by_class!(options)
       class_filter_string = "object_class = #{name}"
       if options.has_key?(:filter) && options[:filter].is_a?(Array)
@@ -183,6 +192,9 @@ module Search
       options
     end
 
+    # Primarily used internally, this alamost always returns an empty hash.
+    # @return [Hash] - a hash of options to pass to meilisearch-ruby gem
+    # see the documentation of SEARH_OPTIONS at the top of this file.
     def search_options
       # this is rarely going to be defined
       return {} unless constants.include?(:SEARCH_OPTIONS)
@@ -213,6 +225,7 @@ module Search
       end
     end
 
+    # Adds all documents in the collection to the search index
     def add_all_to_search(async: true)
       add_documents(
         all.map { |x| x.search_indexable_hash },
@@ -220,14 +233,28 @@ module Search
       )
     end
 
+    # A convenience method to add all documents in the collection to the search index
+    # synchronously
+    def add_all_to_search!
+      add_all_to_search(async: false)
+    end
+
+    # A convenience method that wraps MeiliSearch::Index#stats
+    # See https://www.meilisearch.com/docs/reference/api/stats for more info
     def search_stats
       search_index.stats
     end
 
+    # @return [Integer] the number of documents in the search index
+    # as reported via stats.
+    # See https://www.meilisearch.com/docs/reference/api/stats for more info
     def searchable_documents
       search_index.number_of_documents
     end
 
+    # @return [Boolean] indicating if search ids should be prefixed with the class name
+    # This is controlled by the CLASS_PREFIXED_SEARCH_IDS constant
+    # and defaults to false.
     def has_class_prefixed_search_ids?
       return false unless constants.include?(:CLASS_PREFIXED_SEARCH_IDS)
       !!const_get(:CLASS_PREFIXED_SEARCH_IDS)
@@ -241,11 +268,136 @@ module Search
       search_index.delete_index
     end
 
-    def delete_all_documents!(async: true)
-      async ? search_index.delete_all_documents : search_index.delete_all_documents!
+    # Asynchronously deletes all documents from the search index
+    # regardless of what model they're associated with.
+    def delete_all_documents
+      search_index.delete_all_documents
     end
 
-    def reindex!(async: true)
+    # Synchronously deletes all documents from the search index
+    # regardless of what model they're associated with.
+    def delete_all_documents!
+      search_index.delete_all_documents!
+    end
+
+    # Asynchronously delete & reindex all instances of this class.
+    # Note that this will first attempt to _synchronously_
+    # delete all records from the search index and raise an exception
+    # if that failse.
+    def reindex
+      reindex_core(async: true)
+    end
+
+    # Synchronously delete & reindex all instances of this class
+    def reindex!
+      reindex_core(async: false)
+    end
+
+    # The default list of searchable attributes.
+    # Please don't override this. Define SEARCHABLE_ATTRIBUTES instead.
+    # @return [Array[Symbol]] an array of attribute names as symbols
+    def default_searchable_attributes
+      attribute_names.map { |n| n.to_sym }
+    end
+
+    # This returns the list from SEARCHABLE_ATTRIBUTES if defined,
+    # or the list from default_searchable_attributes
+    # @return [Array[Symbol]] an array symbols corresponding to
+    # attribute or method names.
+    def searchable_attributes
+      if constants.include?(:SEARCHABLE_ATTRIBUTES)
+        return const_get(:SEARCHABLE_ATTRIBUTES).map(&:to_sym)
+      end
+      default_searchable_attributes
+    end
+
+    # indicates if this class is unfilterable.
+    # Defaults to false, but can be overridden by defining
+    # UNFILTERABLE_IN_SEARCH to be true.
+    # @return [Boolean] true if this class is unfilterable
+    def unfilterable?
+      # this is almost _never_ going to be true
+      return false unless constants.include?(:UNFILTERABLE_IN_SEARCH)
+      !!const_get(:UNFILTERABLE_IN_SEARCH)
+    end
+
+    # The list of filterable attributes. By default this
+    # is the same as searchable_attributes. If you want to
+    # restrict filtering to a subset of searchable attributes
+    # you can define FILTERABLE_ATTRIBUTE_NAMES as an array
+    # of symbols corresponding to attribute names.
+    # `object_class` will _always_ be filterable.
+    #
+    # @return [Array[Symbol]] an array of symbols corresponding to
+    # filterable attribute names.
+    def filterable_attributes
+      attributes = []
+      if constants.include?(:FILTERABLE_ATTRIBUTE_NAMES)
+        # the union operator is to guarantee no-one tries to create
+        # invalid filterable attributes
+        attributes = const_get(:FILTERABLE_ATTRIBUTE_NAMES).map(&:to_sym) & searchable_attributes
+      elsif !unfilterable?
+        attributes = searchable_attributes
+      end
+      attributes << "object_class" unless attributes.include? "object_class"
+      attributes
+    end
+
+    # Updates the filterable attributes in the search index.
+    # Note that this forces Meilisearch to rebuild your index,
+    # which may take time. Best to run this in a background job
+    # for large datasets.
+    def set_filterable_attributes!(new_attributes = filterable_attributes)
+      search_index.update_filterable_attributes(new_attributes)
+    end
+
+    private
+
+    def populate_results_from_ids!(results, primary_key)
+      results.each do |klass, ids|
+        results[klass] = klass.constantize.in(primary_key => ids).to_a
+      end
+    end
+
+    def merge_results_with_metadata(results, response)
+      results.merge(
+        {
+          "search_result_metadata" => extract_metadata_from_search_results(response)
+        }
+      )
+    end
+
+    def extract_metadata_from_search_results(result)
+      result.slice(* MEILISEARCH_RESPONSE_METADATA_KEYS)
+    end
+
+    # @returns [Hash[String, Array[String]]] - a hash with class name as the key
+    #   and an array of ids as the value -> ClassName -> [id, id, id]
+    def extract_ordered_ids_from_hits(hits, primary_key)
+      response = {}
+      return response if hits.empty?
+
+      hits.each do |x|
+        object_class = x["object_class"]
+        response[object_class] = [] unless response.has_key?(object_class)
+        response[object_class] << if !has_class_prefixed_search_ids?
+          x[primary_key.to_s]
+        elsif x.has_key?("original_document_id")
+          x["original_document_id"]
+        else
+          x[pk.to_s].sub("#{name}_", "")
+        end
+      end
+
+      response
+    end
+
+    def validate_documents(documents)
+      return true if documents.all? { |x| x.has_key?("object_class") }
+      raise "All searchable documents must define object_class"
+    end
+
+    def reindex_core(async: true)
       # no point in continuing if this fails...
       delete_all_documents!(async: false)
 
@@ -263,91 +415,5 @@ module Search
 
       set_filterable_attributes!
     end
-
-    def default_searchable_attributes
-      attribute_names.map { |n| n.to_sym }
-    end
-
-    def searchable_attributes
-      return const_get(:SEARCHABLE_ATTRIBUTES) if constants.include?(:SEARCHABLE_ATTRIBUTES)
-      default_searchable_attributes
-    end
-
-    def unfilterable?
-      # this is almost _never_ going to be true
-      return false unless constants.include?(:UNFILTERABLE_IN_SEARCH)
-      !!const_get(:UNFILTERABLE_IN_SEARCH)
-    end
-
-    def filterable_attributes
-      attributes = []
-      if constants.include?(:FILTERABLE_ATTRIBUTE_NAMES)
-        # the union operator is to guarantee no-one tries to create
-        # invalid filterable attributes
-        attributes = const_get(:FILTERABLE_ATTRIBUTE_NAMES) & searchable_attributes
-      elsif constants.include?(:SEARCHABLE_ATTRIBUTE_NAMES)
-        attributes = const_get(:SEARCHABLE_ATTRIBUTE_NAMES)
-      end
-      attributes = default_searchable_attributes unless unfilterable?
-      attributes << "object_class" unless attributes.include? "object_class"
-      attributes
-    end
-
-    # Updates the filterable attributes in the search index.
-    # Note that this forces Meilisearch to rebuild your index,
-    # which may take time. Best to run this in a background job
-    # for large datasets.
-    def set_filterable_attributes!(new_attributes = filterable_attributes)
-      search_index.update_filterable_attributes(new_attributes)
-    end
-
-    private
-
-    def populate_results_from_ids!(results, primary_key)
-      results.each do | klass, ids |
-        results[klass] = klass.constantize.in(primary_key => ids).to_a
-      end
-    end
-
-    def merge_results_with_metadata(results, response)
-      results.merge(
-          {
-            "search_result_metadata" => extract_metadata_from_search_results(response)
-          }
-        )
-    end
-
-    def extract_metadata_from_search_results(result)
-      result.slice(* MEILISEARCH_RESPONSE_METADATA_KEYS)
-    end
-
-    # @returns [Hash[String, Array[String]]] - a hash with class name as the key
-    #   and an array of ids as the value -> ClassName -> [id, id, id]
-    def extract_ordered_ids_from_hits(hits, primary_key)
-      response = {}
-      return response if hits.empty?
-
-      hits.each do | x |
-        object_class = x["object_class"]
-        response[object_class] = [] unless response.has_key?(object_class)
-        if ! has_class_prefixed_search_ids?
-          response[object_class] << x[primary_key.to_s]
-        else
-          if x.has_key?("original_document_id")
-            response[object_class] << x["original_document_id"]
-          else
-            response[object_class] << x[pk.to_s].sub("#{name}_", "")
-          end
-        end
-      end
-
-      response
-    end
-
-    def validate_documents(documents)
-      return true if documents.all? { | x | x.has_key?("object_class") }
-      raise "All searchable documents must define object_class"
-    end
-
   end
 end

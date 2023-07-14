@@ -1,0 +1,151 @@
+# frozen_string_literal: true
+
+require "rspec"
+require "spec_helper"
+require "test_classes"
+
+RSpec.describe Search::InstanceMethods do
+  let(:instance) {
+    BasicTestModel.new(name: "Ruth Bader Ginsberg", description: "total badass", age: 87)
+  }
+  # rubocop:disable RSpec/VerifiedDoubles
+  let(:search_index) {
+    double("MeiliSearch::index")
+  }
+  # rubocop:enable RSpec/VerifiedDoubles
+
+  context "when interacting with the index" do
+    before do
+      allow(BasicTestModel).to(
+        receive(:search_index)
+          .and_return(search_index)
+      )
+    end
+
+    it "adds the document to search asynchronously" do
+      expect(search_index).to(
+        receive(:add_documents)
+          .with(anything, anything)
+          .and_return(true)
+      )
+      instance.add_to_search
+    end
+
+    it "is able to add a document synchronously" do
+      expect(search_index).to(
+        receive(:add_documents!)
+          .with(anything, anything)
+          .and_return(true)
+      )
+      instance.add_to_search!
+    end
+
+    it "is able to update a document in search asynchronously" do
+      expect(search_index).to(
+        receive(:update_documents)
+          .with(anything, anything)
+          .and_return(true)
+      )
+      instance.update_in_search
+    end
+
+    it "is able to update a document in search synchronously" do
+      expect(search_index).to(
+        receive(:update_documents!)
+          .with([anything], anything)
+          .and_return(true)
+      )
+      instance.update_in_search!
+    end
+
+    it "is able to remove a document from search asynchronously" do
+      expect(search_index).to(
+        receive(:delete_document)
+          .with(instance.id.to_s)
+          .and_return(true)
+      )
+      instance.remove_from_search
+    end
+
+    it "is able to remove a document from search synchronously" do
+      expect(search_index).to(
+        receive(:delete_document!)
+          .with(instance.id.to_s)
+          .and_return(true)
+      )
+      instance.remove_from_search!
+    end
+  end
+
+  context "when generating an indexable hash" do
+    let(:hash) { instance.search_indexable_hash }
+
+    context "when searchable_attributes are restricted" do
+      before do
+        allow(BasicTestModel).to(
+          receive(:searchable_attributes)
+            .and_return([:name])
+        )
+      end
+
+      it "onlies use searchable attributes", :aggregate_failures do
+        expect(hash.keys.include?("name")).to(eq(true))
+        expect(hash.keys).not_to(match_array(%w[description age]))
+      end
+
+      it "adds id if missing", :aggregate_failures do
+        expect(hash.keys.include?("id")).to(eq(true))
+        expect(hash["id"]).to(eq(instance._id.to_s))
+      end
+
+      it "adds object_class if missing" do
+        expect(hash.keys.include?("object_class")).to(eq(true))
+      end
+    end
+
+    it "converts _id to id", :aggregate_failures do
+      allow(BasicTestModel).to(
+        receive(:searchable_attributes)
+          .and_return([:_id, :name])
+      )
+      expect(hash.keys.include?("id")).to(eq(true))
+      expect(hash.keys.include?("_id")).to(eq(false))
+    end
+
+    it "converts id to a string" do
+      allow(BasicTestModel).to(
+        receive(:searchable_attributes)
+          .and_return([:id, :name])
+      )
+      allow(instance).to(
+        receive(:attributes)
+          .and_return({"id" => [1, 2], "name" => "Mary"})
+      )
+      expect(hash["id"]).to(eq("[1, 2]"))
+    end
+
+    it "does not replace existing object_class" do
+      allow(BasicTestModel).to(
+        receive(:searchable_attributes)
+          .and_return([:name, :object_class])
+      )
+      allow(instance).to(
+        receive(:attributes)
+          .and_return({"object_class" => "FooModel", "name" => "Mary"})
+      )
+
+      expect(hash["object_class"]).to(eq("FooModel"))
+    end
+
+    it "inserts original_document_id when using class prefixed search ids", :aggregate_failures do
+      etm = ExtendedTestModel.new(name: "mary")
+      etm_hash = etm.search_indexable_hash
+      expect(etm_hash.keys.include?("original_document_id")).to(eq(true))
+      expect(etm_hash["original_document_id"]).to(eq(etm._id.to_s))
+    end
+
+    it "does not insert origininal_document when NOT using class prefixed search ids" do
+      expect(hash.keys.include?("original_document_id")).to(eq(false))
+    end
+  end
+end

@@ -1,4 +1,4 @@
-require 'mongoid'
+require "mongoid"
 
 class BasicTestModel
   include Mongoid::Document
@@ -11,7 +11,7 @@ class BasicTestModel
 end
 
 class UnfilterableTestModel < BasicTestModel
-  UNFILTERABLE_IN_SEARCH=true
+  UNFILTERABLE_IN_SEARCH = true
 end
 
 class ExtendedTestModel < BasicTestModel
@@ -28,5 +28,4 @@ class ExtendedTestModel < BasicTestModel
   SEARCH_RANKING_RULES = %w[exactness sort attribute proximity typo words]
   # again, just checking that they're being picked up.
   # above is the reverse order of normal
-
 end

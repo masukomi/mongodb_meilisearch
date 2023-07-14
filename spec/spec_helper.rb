@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require 'dotenv/load'
+require "dotenv/load"
 require "mongodb_meilisearch"
 
 RSpec.configure do |config|
@@ -14,4 +14,3 @@ RSpec.configure do |config|
     c.syntax = :expect
   end
 end
-
