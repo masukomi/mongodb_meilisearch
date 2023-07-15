@@ -1,14 +1,9 @@
 # MongodbMeilisearch
 
-A simple gem for integrating Meilisearch into Ruby† applications that are backed by MongoDB.
-
-NOTE: this should _not_ be considered production ready. There is essentially not automated 
-testing. That being said, I use it on a daily basis and will actively fix any issues that come up.
-
+A simple gem for integrating [Meilisearch](https://www.meilisearch.com) into Ruby† applications that are backed by [MongoDB](https://www.mongodb.com/).
 
 
 † It's currently limited to Rails apps, but hopefully that will change soon. 
-
 
 ## Installation
 
@@ -22,13 +17,13 @@ If bundler is not being used to manage dependencies, install the gem by executin
 
 ## Usage
 
-A high level overview of working with our Meilisearch integration. More details can be found in the classes under `app/lib/search`
+A high level overview 
 
 ### Pre-Requisites
 
 - [Meilisearch](https://www.meilisearch.com)
 - [MongoDB](https://www.mongodb.com/)
-- Some classes that `include Mongoid::Document`
+- Some models that `include Mongoid::Document`
 
 ### Configuration
 
@@ -55,8 +50,9 @@ This assumes your model also includes `Mongoid::Document`
   include Search::InstanceMethods
 ```
 
-If you want Rails to auto-add records to the search index, add the following to your model. 
-You can override these if needed.
+If you want Rails to automatically add, update, and delete records from the index, add the following to your model. 
+
+You can override these methods if needed, but you're unlikely to want to.
 
 ```ruby
   # enabled?() is controlled by the SEARCH_ENABLED environment variable
@@ -67,18 +63,21 @@ You can override these if needed.
   end
 ```
 
-Assuming you've done the above a new index will be created with a name that corresponds to your model's 
-name, only in snake case. All of your models attributes will be indexed and filterable.
+Assuming you've done the above a new index will be created with a name that
+corresponds to your model's  name, only in snake case. All of your models
+attributes will be indexed and [filterable](https://www.meilisearch.com/docs/learn/fine_tuning_results/filtering).
 
 
 ### Going Beyond The Defaults 
-This module strives for sensible defaults, but you can override them with
-the following optional constants:
+This module strives for sensible defaults, but you can override them with the
+following optional constants:
 
-* `PRIMARY_SEARCH_KEY` - a Symbol matching one of your model's attributes that is guaranteed unique
+* `PRIMARY_SEARCH_KEY` - a Symbol matching one of your model's attributes 
+  that is guaranteed unique. This defaults to `_id`
 * `SEARCH_INDEX_NAME` - a String - useful if you want to have records from
-  multiple classes come back in the same search results.
-* `SEARCH_OPTIONS` - a hash of key value pairs in js style
+  multiple classes come back in the same search results. This defaults to the
+  underscored form of the current class name.
+* `SEARCH_OPTIONS` - a hash of key value pairs in JS style
     - See  the [meilisearch search parameter docs](https://www.meilisearch.com/docs/reference/api/search#search-parameters) for details.
     - example from [meliesearch's `multi_param_spec`](https://github.com/meilisearch/meilisearch-ruby/blob/main/spec/meilisearch/index/search/multi_params_spec.rb)
   ```ruby
@@ -101,15 +100,20 @@ Searching is limited to records that have been added to a given index. This mean
 if you want to perform one search and get back records from multiple models you'll need to 
 add them to the same index.
 
-In order to do that add the `SEARCH_INDEX_NAME` constant to the model whose search stuff you want to end up in the same index.
+In order to do that add the `SEARCH_INDEX_NAME` constant to the model whose search stuff you want to end up in the same index. You can name this just about anything. The important thing is 
+that all the models that share this index have the same `SEARCH_INDEX_NAME` constant defined. You may want to just add it to a module they all import.
+
 
 ```ruby
   SEARCH_INDEX_NAME='general_search'
 ```
-Unless you can guarantee that there won't any overlap in IDs between the two models you should also 
+
+If multiple models are using the same index, you should also 
 add `CLASS_PREFIXED_SEARCH_IDS=true`. This causes the `id` field to 
 be `<ClassName>_<_id>` For example, a `Note` record might have an 
-index of `"Note_64274543906b1d7d02c1fcc6"`. If undefined this will default to `false`
+index of `"Note_64274543906b1d7d02c1fcc6"`. If undefined this will default to `false`. 
+This is not needed if you can absolutely guarantee that there will be
+no overlap in ids amongst all the models using a shared index.
 
 ```ruby
   CLASS_PREFIXED_SEARCH_IDS=true
@@ -132,9 +136,10 @@ document's `BSON::ObjectId`.
 
 ```ruby
   # explicitly define the fields you want to be searchable
-  SEARCHABLE_ATTRIBUTES = %w[title body]
+  # this should be an array of symbols
+  SEARCHABLE_ATTRIBUTES = %i[title body]
   # OR explicitly define the fields you DON'T want searchable 
-  SEARCHABLE_ATTRIBUTES = searchable_attributes - ['created_at']
+  SEARCHABLE_ATTRIBUTES = searchable_attributes - [:created_at]
 ```
 
 #### Getting Extra Specific
@@ -154,7 +159,7 @@ See `InstanceMethods#search_indexable_hash` for an example.
 If you'd like to only be able to filter on a subset of those then 
 you can define `FILTERABLE_ATTRIBUTE_NAMES` but it _must_ be a subset 
 of `SEARCHABLE_ATTRIBUTES`. This is enforced by the gem to guarantee
-no complaints from Meilisearch.
+no complaints from Meilisearch. These must be symbols.
 
 If you have no direct need for filterable results, 
 set `UNFILTERABLE_IN_SEARCH=true` in your model. This will save
@@ -183,16 +188,20 @@ guidance on what to do when indexing your data.
 
 
 ### Indexing things
-Note: all of the following methods run asynchronously in Meilisearch. 
-You won't find out if they fail. To run them synchronously 
-and receive the response from the server, pass in `false` 
-for the optional `async` parameter.
+**Important note**: By default anything you do that updates the search index (adding, removing, or changing) happens asynchronously. 
+
+Sometimes, especially when debugging something on the console, you want to
+update the index _synchronously_. The convention used in this codebase is that
+the synchronous methods  are the ones with the bang.  Similar to how mutating
+state is potentially dangerous and noted with a bang, using synchronous methods
+is potentially problematic for your users, and thus noted with a bang.
+
 
 For example: 
 ```ruby
-MyModel.reindex! # runs asyncronously
+MyModel.reindex  # runs asyncronously
 # vs 
-MyModel.reindex!(async: false) # runs synchronously
+MyModel.reindex! # runs synchronously
 ```
 
 #### Reindexing, Adding, Updating, and Deleting
@@ -202,27 +211,34 @@ Calling `MyModel.reindex!` deletes all the existing records from the current ind
 and then reindexes all the records for the current model. It's safe to run this
 even if there aren't any records. 
 
-Note: reindexing happens semi-asynchronously by default. It will first, 
-attempt to synchronously delete all the records from the index. If that
+Note: reindexing behaves slightly differently than all the other methods.
+It runs semi-asynchronously by default. The Asynchronous form will first, 
+attempt to _synchronously_ delete all the records from the index. If that
 fails an exception will be raised. Otherwise you'd think everything was
-fine when actually it had failed miserably. If you call `.reindex!(async: false)` 
+fine when actually it had failed miserably. If you call `.reindex!` 
 it will be entirely synchronous.
+
+Note: adding, updating, and deleting should happen automatically 
+if you've defined `after_create`, `after_update`, and `after_destroy` 
+as instructed above. You'll mostly only want to use these when manually
+mucking with things in the console.
 
 **Adding**  
 Be careful to not add documents that are already in the index. 
 
 - Add everything: `MyClass.add_all_to_search`
 - Add a specific instance: `my_instance.add_to_search`
-- Add a specific subset of documents: `MyClass.add_documents(documents_hash)`
-  IMPORTANT: `documents_hash` must be an array of hashes that were generated 
+- Add a specific subset of documents: `MyClass.add_documents(documents_hashes)`
+  IMPORTANT: `documents_hashes` must be an array of hashes that were each generated 
   via `search_indexable_hash`
 
 **Updating**  
-- Update everything: call `reindex!`
+- Update everything: call `reindex`
 - Update a specific instance: `my_instance.update_in_search`
-- Update a specific subset of documents: `MyClass.update_documents(documents_hash)`
-  IMPORTANT: `documents_hash` must be an array of hashes that were generated
-  via `search_indexable_hash`
+- Update a specific subset of documents: `MyClass.update_documents(documents_hashes)`
+  IMPORTANT: `documents_hashes` must be an array of hashes that were generated
+  via `search_indexable_hash` The `PRIMARY_SEARCH_KEY` (`_id` by default) will be 
+  used to find records in the index to update.
 
 
 **Deleting**  
@@ -230,7 +246,7 @@ Be careful to not add documents that are already in the index.
 - Delete a specific record: `my_instance.remove_from_search`
 - Delete the index: `MyClass.delete_index!`  
   WARNING: if you think you should use this, you're probably 
-  mistaken.
+  mistaken. 
 
 #### Shared indexes
 Imagine you have a `Note` and a `Comment` model, sharing an index so that
@@ -238,7 +254,8 @@ you can perform a single search and have search results for both models
 that are ranked by relevance.
 
 In this case both models would define a `SEARCH_INDEX_NAME` constant with the
-same value.
+same value. You might want to just put this, and the other search stuff 
+in a common module that they all `include`.
 
 Then, when you search you can say `Note.search("search term")` and it will _only_ 
 bring back results for `Note` records. If you want to include results that match 
@@ -336,11 +353,18 @@ Pagy.new(
 ```
 
 ## Development
+To contribute to this gem.
+
 
 - Run `bundle install` to install all the dependencies. 
+- run `lefthook install` to set up [lefthook](https://github.com/evilmartians/lefthook)
+  This will do things like make sure the tests still pass, and run rubocop before you commit.
 - Start hacking. 
 - Add RSpec tests.
+- Add your name to CONTRIBUTORS.md
 - Make PR.
+  
+NOTE: by contributing to this repository you are offering to transfer copyright to the current maintainer of the repository. 
 
 To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
 
@@ -353,7 +377,10 @@ and contributors are expected to adhere to the
 ## License
 
 The gem is available as open source under the terms of the 
-[MIT License](https://opensource.org/licenses/MIT).
+[Server Side Public License](https://github.com/masukomi/mongodb_meilisearch/blob/main/LICENSE.txt). For those unfamiliar, the short version is that if you use it in a server side app you need to 
+share all the code for that app and its infrastructure. It's like AGPL on
+steroids. Commercial licenses are available if you want to use this in a
+commercial setting but not share all your source.
 
 ## Code of Conduct
 
