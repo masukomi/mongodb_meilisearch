@@ -97,7 +97,7 @@ module Search
     #   This is a hash with paging information and more.
     def raw_search(search_string, options = search_options)
       index = search_index
-      index.search(search_string, *options)
+      index.search(search_string, options)
     end
 
     # @param search_string [String] - what you're searching for
@@ -152,15 +152,31 @@ module Search
       #   "query" => "carlo"
       # }
       response = raw_search(search_string, options)
-      results = extract_ordered_ids_from_hits(response["hits"], pk)
+      results = extract_ordered_ids_from_hits(response["hits"], pk, ids_only)
+      # results =
+      # {
+      #   "matching_ids" => [list, of, ids, possibly, class, prefixed]
+      #
+      #   # if we're NOT just doing ids_only...
+      #   # this will be deleted but we want it so that we can
+      #   # limit it to 1 query per class instead of one per result.
+      #   "matches_by_class" => {
+      #     "FooBar"   => [list, of, ids, not, class, prefixed],
+      #     "BarModel" => [list, of, ids, not, class, prefixed]
+      #   }
+      # }
 
       if response["hits"].size == 0 || ids_only
+        # TODO change it to `matches` from `matching_ids`
+        matches = {"matches" => results["matching_ids"]}
         if include_metadata
-          return merge_results_with_metadata(results, response)
+          return merge_results_with_metadata(matches, response)
         else
-          return results
+          return matches
         end
       end
+
+      # I see you'd like some objects. Okeydokey.
 
       populate_results_from_ids!(
         results,
@@ -169,6 +185,27 @@ module Search
         ((pk == :id) ? :_id : pk)
       )
 
+      # we _could_ return "matches_by_class" to users
+      # and they _may_ be useful, but
+      # doing so also implies the need for matches_by_class
+      # with ids_only == true and supporting the resulting variety
+      # of possible responeses from this method was too much.
+      # Maybe if someone has a compelling reason for it
+      # we can add in full support for this in a future version.
+      results.delete("matches_by_class")
+
+      # don't need these anymore
+      results.delete("matching_ids")
+
+      # "object_classes" is just leftover internal cruft
+      # it's going to look like ["Note", "Note", "Task", "Note"]
+      results.delete("object_classes")
+
+      # results is now
+      # {
+      #   matching_ids => [list, o, ids],
+      #   matching_objects => [list o objects]
+      # }
       if include_metadata
         merge_results_with_metadata(results, response)
       else
@@ -353,10 +390,43 @@ module Search
 
     private
 
-    def populate_results_from_ids!(results, primary_key)
-      results.each do |klass, ids|
-        results[klass] = klass.constantize.in(primary_key => ids).to_a
+    def lookup_matches_by_class(results, primary_key)
+      results["matches_by_class"].each do |klass, ids|
+        # hash of string_id => obj
+        results["matches_by_class"][klass] = Hash[* klass
+          .constantize
+          .in(primary_key => ids)
+          .to_a
+          .map { |obj| [obj.send(primary_key).to_s, obj] }
+          .flatten ]
       end
+    end
+
+    def populate_results_from_ids!(results, primary_key)
+      lookup_matches_by_class(results, primary_key)
+
+      results["matches"] = []
+
+      # ok we now have
+      # "matches_by_class" = { "Note" => {id => obj}}
+      # but possibly with many classes.
+      # we NEED matches in the same order as "matching_ids"
+      # because that's the order Meilisearch felt best matched your query
+      #
+      results["matching_ids"].each_with_index do |id, index|
+        klass_name = results["object_classes"][index]
+        maybe_obj = if has_class_prefixed_search_ids?
+          results["matches_by_class"][klass_name][id.sub(/^\w+?_/, "")]
+        else
+          results["matches_by_class"][klass_name][id]
+        end
+        # it's possible the search index is referencing an object
+        # that no longer exists in the db.
+        # in that case maybe_obj will be nil
+        results["matches"] << maybe_obj if maybe_obj
+      end
+
+      results
     end
 
     def merge_results_with_metadata(results, response)
@@ -373,19 +443,38 @@ module Search
 
     # @returns [Hash[String, Array[String]]] - a hash with class name as the key
     #   and an array of ids as the value -> ClassName -> [id, id, id]
-    def extract_ordered_ids_from_hits(hits, primary_key)
-      response = {}
+    def extract_ordered_ids_from_hits(hits, primary_key, ids_only)
+      response = {"matching_ids" => []}
+      unless ids_only
+        response["matches_by_class"] = {}
+        # we need object_clases because you COULD
+        # have multiple models in an index but also
+        # have has_class_prefixed_search_ids? return false
+        # because you've got some funky ids guaranteed not to overlap
+        response["object_classes"] = []
+      end
+      string_primary_key = primary_key.to_s
       return response if hits.empty?
 
       hits.each do |x|
+        response["matching_ids"] << x[string_primary_key]
+
+        next if ids_only
+
         object_class = x["object_class"]
-        response[object_class] = [] unless response.has_key?(object_class)
-        response[object_class] << if !has_class_prefixed_search_ids?
-          x[primary_key.to_s]
+        response["object_classes"] << object_class
+
+        response["matches_by_class"][object_class] = [] unless response["matches_by_class"].has_key?(object_class)
+        response["matches_by_class"][object_class] << if !has_class_prefixed_search_ids?
+          x[string_primary_key]
         elsif x.has_key?("original_document_id")
           x["original_document_id"]
+        # DOES have class prefixed search ids
         else
-          x[pk.to_s].sub("#{name}_", "")
+          # DOES have class prefixed search ids but
+          # DOES NOT have original_document_id
+          # This is only possible if they've overridden #search_indexable_hash
+          x[string_primary_key].sub(/^\w+_/, "")
         end
       end
 
@@ -399,7 +488,7 @@ module Search
 
     def reindex_core(async: true)
       # no point in continuing if this fails...
-      delete_all_documents!(async: false)
+      delete_all_documents!
 
       # this conveniently lines up with the batch size of 100
       # that Mongoid gives us

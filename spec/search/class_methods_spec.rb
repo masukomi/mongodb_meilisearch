@@ -91,7 +91,9 @@ RSpec.describe Search::ClassMethods do
 
       let(:instantiated_objects) {
         raw_search_results["hits"].map { |h|
-          BasicTestModel.new(h.slice("_id", "name", "description", "age"))
+          x = BasicTestModel.new(h.slice("id", "name", "description", "age"))
+          x._id = h["id"] # override the id that Mongoid generated
+          x
         }
       }
 
@@ -107,16 +109,16 @@ RSpec.describe Search::ClassMethods do
         )
       end
 
-      it "returns the expected hash of ids when searching for ids only" do
+      it "returns the expected list ids when searching for ids only" do
         expected = {
-          "BasicTestModel" => hit_ids
+          "matches" => hit_ids
         }.merge({"search_result_metadata" => search_result_metadata})
 
         expect(BasicTestModel.search(query_string, ids_only: true)).to(eq(expected))
       end
 
-      it "returns the expected hash of objects when searching", :aggregate_failures do
-        expect(search_result["BasicTestModel"]).to(eq(instantiated_objects))
+      it "returns the expected hash of objects when searching" do
+        expect(search_result["matches"]).to(eq(instantiated_objects))
       end
 
       it "returns a hash with expected metadata" do

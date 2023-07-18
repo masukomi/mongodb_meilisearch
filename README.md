@@ -282,11 +282,48 @@ your request. You'll need this for pagination if you have lots of results. To _e
 the metadata pass `include_metadata: false` as an option. 
 E.g. `MyModel.search("search term", include_metadata: false)`
 
+### Useful Keyword Parameters
+
+- `ids_only`
+  - only return matching ids. These will be an array under the `"matches"` key.
+  - defaults to `false`
+- `filtered_by_class`
+  - limit results to the class you initiated the search from. E.g. `Note.search("foo")` will only return results from the `Note` class even if there are records from other classes in the same index.
+  - defaults to `true`
+- `include_metadata`
+  - include the metadata about the search results provided by Meilisearch. If true (default) there will be a `"search_result_metadata"` key, with a hash of the Meilisearch metadata.
+  - defaults to `true`
+
+### Example Search Results
+
+Search results, ids only, for a class where `CLASS_PREFIXED_SEARCH_IDS=false`. 
+
 ```ruby
-Note.search('foo')
+Note.search('foo', ids_only: true)
 # returns 
 { 
-  "Note" => [
+  "matches" =>  [
+    "64274a5d906b1d7d02c1fcc7",
+    "643f5e1c906b1d60f9763071",
+    "64483e63906b1d84f149717a"
+  ],
+  "search_result_metadata" => {
+          "query"=>query_string, "processingTimeMs"=>1, "limit"=>50,
+          "offset"=>0, "estimatedTotalHits"=>33, "nbHits"=>33
+  }
+}
+```
+If `CLASS_PREFIXED_SEARCH_IDS=true` the above would have ids like `"Note_64274a5d906b1d7d02c1fcc7"`
+
+
+Without `ids_only` you get full objects in a `matches` array.
+
+
+```ruby
+Note.search('foo') # or Note.search('foo', ids_only: false)
+# returns 
+{ 
+  "matches" => [
     #<Note _id: 64274a5d906b1d7d02c1fcc7, created_at: 2023-03-15 00:00:00 UTC, updated_at: 2023-03-31 21:02:21.108 UTC, title: "A note from the past", body: "a body", type: "misc", context: "dachary">,
     #<Note _id: 643f5e1c906b1d60f9763071, created_at: 2023-04-18 00:00:00 UTC, updated_at: 2023-04-19 03:21:00.41 UTC, title: "offline standup ", body: "onother body", type: "misc", context: "WORK">,
     #<Note _id: 64483e63906b1d84f149717a, created_at: 2023-04-25 00:00:00 UTC, updated_at: 2023-04-26 11:23:38.125 UTC, title: "Standup Notes (for wed)", body: "very full bodied", type: "misc", context: "WORK">
@@ -298,23 +335,24 @@ Note.search('foo')
 }
 ```
 
-To just return the IDs of those objects in the same order invoke it like this:
-`MyModel.search("search term", ids_only: true)`
 
+
+If `Note` records shared an index with `Task` and they both had `CLASS_PREFIXED_SEARCH_ID=true` you'd get a result like this.
 
 ```ruby
-Note.search('foo', ids_only: true)
+Note.search('foo')
 # returns 
-{
-  "Note" => [
-    "64274a5d906b1d7d02c1fcc7",
-    "643f5e1c906b1d60f9763071",
-    "64483e63906b1d84f149717a"
+{ 
+  "matches" => [
+      #<Note _id: 64274a5d906b1d7d02c1fcc7, created_at: 2023-03-15 00:00:00 UTC, updated_at: 2023-03-31 21:02:21.108 UTC, title: "A note from the past", body: "a body", type: "misc", context: "dachary">,
+      #<Note _id: 643f5e1c906b1d60f9763071, created_at: 2023-04-18 00:00:00 UTC, updated_at: 2023-04-19 03:21:00.41 UTC, title: "offline standup ", body: "onother body", type: "misc", context: "WORK">,
+      #<Task _id: 64483e63906b1d84f149717a, created_at: 2023-04-25 00:00:00 UTC, updated_at: 2023-04-26 11:23:38.125 UTC, title: "Do the thing", body: "very full bodied", type: "misc", context: "WORK">
   ],
   "search_result_metadata" => {
-    "query"=>query_string, "processingTimeMs"=>1, "limit"=>50,
-    "offset"=>0, "estimatedTotalHits"=>33, "nbHits"=>33
+          "query"=>query_string, "processingTimeMs"=>1, "limit"=>50,
+          "offset"=>0, "estimatedTotalHits"=>33, "nbHits"=>33
   }
+  
 }
 ```
 
