@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "dotenv/load"
+require "debug"
 require "mongodb_meilisearch"
 
 RSpec.configure do |config|
