@@ -1,3 +1,14 @@
+# <!-- :TOC: -->
+- [MongodbMeilisearch](#mongodbmeilisearch)
+  - [Installation](#installation)
+  - [Usage](#usage)
+  - [Model Integration](#model-integration)
+  - [Indexes](#indexes)
+  - [Searching](#searching)
+  - [Development](#development)
+  - [License](#license)
+  - [Code of Conduct](#code-of-conduct)
+
 # MongodbMeilisearch
 
 A simple gem for integrating [Meilisearch](https://www.meilisearch.com) into Ruby† applications that are backed by [MongoDB](https://www.mongodb.com/).
@@ -35,7 +46,10 @@ SEARCH_ENABLED=true
 MEILISEARCH_API_KEY=<your api key here>
 MEILISEARCH_URL=http://127.0.0.1:7700
 
-# optional configuration
+```
+
+Optional configuration
+```bash
 MEILISEARCH_TIMEOUT=10
 MEILISEARCH_MAX_RETRIES=2
 ```
@@ -46,8 +60,8 @@ Add the following near the top of your model. Only the `extend` and `include` li
 This assumes your model also includes `Mongoid::Document`
 
 ```ruby
-  extend Search::ClassMethods
   include Search::InstanceMethods
+  extend Search::ClassMethods
 ```
 
 If you want Rails to automatically add, update, and delete records from the index, add the following to your model. 
@@ -67,17 +81,40 @@ Assuming you've done the above a new index will be created with a name that
 corresponds to your model's  name, only in snake case. All of your models
 attributes will be indexed and [filterable](https://www.meilisearch.com/docs/learn/fine_tuning_results/filtering).
 
+### Example Rails Model
+
+Here's what it looks like when you put it all 
+together in a Rails model with the default behavior.
+
+```ruby
+class Person
+  include Mongoid::Document
+  extend Search::ClassMethods
+
+  if Search::Client.instance.enabled?
+    after_create  :add_to_search
+    after_update  :update_in_search
+    after_destroy :remove_from_search
+  end
+
+  # normal Mongoid attributes
+  field :name, type: String
+  field :description, type: String
+  field :age, type: Integer
+end
+```
+
 
 ### Going Beyond The Defaults 
 This module strives for sensible defaults, but you can override them with the
 following optional constants:
 
-* `PRIMARY_SEARCH_KEY` - a Symbol matching one of your model's attributes 
+- `PRIMARY_SEARCH_KEY` - a Symbol matching one of your model's attributes 
   that is guaranteed unique. This defaults to `_id`
-* `SEARCH_INDEX_NAME` - a String - useful if you want to have records from
+- `SEARCH_INDEX_NAME` - a String - useful if you want to have records from
   multiple classes come back in the same search results. This defaults to the
   underscored form of the current class name.
-* `SEARCH_OPTIONS` - a hash of key value pairs in JS style
+- `SEARCH_OPTIONS` - a hash of key value pairs in JS style
     - See  the [meilisearch search parameter docs](https://www.meilisearch.com/docs/reference/api/search#search-parameters) for details.
     - example from [meliesearch's `multi_param_spec`](https://github.com/meilisearch/meilisearch-ruby/blob/main/spec/meilisearch/index/search/multi_params_spec.rb)
   ```ruby
@@ -89,7 +126,7 @@ following optional constants:
         limit: 2
       }
     ```
-* `SEARCH_RANKING_RULES` - an array of strings that correspond to meilisearch rules
+- `SEARCH_RANKING_RULES` - an array of strings that correspond to meilisearch rules
   see [meilisearch ranking rules docs](https://www.meilisearch.com/docs/learn/core_concepts/relevancy#ranking-rules)
 You probably don't want to change this.
 
@@ -200,7 +237,12 @@ is potentially problematic for your users, and thus noted with a bang.
 For example: 
 ```ruby
 MyModel.reindex  # runs asyncronously
-# vs 
+
+```
+
+vs 
+
+```ruby
 MyModel.reindex! # runs synchronously
 ```
 
@@ -303,8 +345,7 @@ E.g. `MyModel.search("search term", include_metadata: false)`
 Search results, ids only, for a class where `CLASS_PREFIXED_SEARCH_IDS=false`. 
 
 ```ruby
-Note.search('foo', ids_only: true)
-# returns 
+Note.search('foo', ids_only: true) # => returns 
 { 
   "matches" =>  [
     "64274a5d906b1d7d02c1fcc7",
@@ -328,8 +369,7 @@ Without `ids_only` you get full objects in a `matches` array.
 
 
 ```ruby
-Note.search('foo') # or Note.search('foo', ids_only: false)
-# returns 
+Note.search('foo') # or Note.search('foo', ids_only: false) # => returns 
 { 
   "matches" => [
     #<Note _id: 64274a5d906b1d7d02c1fcc7, created_at: 2023-03-15 00:00:00 UTC, updated_at: 2023-03-31 21:02:21.108 UTC, title: "A note from the past", body: "a body", type: "misc", context: "dachary">,
@@ -348,8 +388,7 @@ Note.search('foo') # or Note.search('foo', ids_only: false)
 If `Note` records shared an index with `Task` and they both had `CLASS_PREFIXED_SEARCH_ID=true` you'd get a result like this.
 
 ```ruby
-Note.search('foo')
-# returns 
+Note.search('foo') #=> returns 
 { 
   "matches" => [
       #<Note _id: 64274a5d906b1d7d02c1fcc7, created_at: 2023-03-15 00:00:00 UTC, updated_at: 2023-03-31 21:02:21.108 UTC, title: "A note from the past", body: "a body", type: "misc", context: "dachary">,
