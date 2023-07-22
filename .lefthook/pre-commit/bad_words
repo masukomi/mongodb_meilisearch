@@ -1,9 +1,9 @@
-#!/usr/bin/env bash 
+#!/usr/bin/env bash
 
 # Modify this
 # LIST='list\|of\|words\|splitted\|by\|slash\|and\|pipe'
 # NOTE: list is case SENSITIVE (intentionally)
-LIST="\.debug\|debugger\|binding.pry\|byebug\|alert(\|console.log("
+LIST="\.debug\|debugger\|binding.pry\|byebug\|alert(\|console.log(\|FIXME"
 
 
 for FILE in $(git diff --cached --name-only --diff-filter=ACM) ; do
