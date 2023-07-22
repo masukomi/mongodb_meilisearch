@@ -14,8 +14,11 @@ class UnfilterableTestModel < BasicTestModel
   UNFILTERABLE_IN_SEARCH = true
 end
 
-class ExtendedTestModel < BasicTestModel
+class CustomPrimaryKeyModel < BasicTestModel
   PRIMARY_SEARCH_KEY         = :name
+end
+
+class ExtendedTestModel < BasicTestModel
   CLASS_PREFIXED_SEARCH_IDS  = true
   SEARCHABLE_ATTRIBUTE_NAMES = %w[name description age]
   FILTERABLE_ATTRIBUTE_NAMES = %w[name age]
@@ -28,4 +31,8 @@ class ExtendedTestModel < BasicTestModel
   SEARCH_RANKING_RULES = %w[exactness sort attribute proximity typo words]
   # again, just checking that they're being picked up.
   # above is the reverse order of normal
+end
+
+# we need a 2nd class with the same SEARCH_INDEX_NAME
+class OtherExtendedTestModel < ExtendedTestModel
 end

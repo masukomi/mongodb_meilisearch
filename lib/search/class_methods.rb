@@ -155,14 +155,14 @@ module Search
       results = extract_ordered_ids_from_hits(response["hits"], pk, ids_only)
       # results =
       # {
-      #   "matching_ids" => [list, of, ids, possibly, class, prefixed]
+      #   "matching_ids" => [array, of, ids, possibly, class, prefixed]
       #
       #   # if we're NOT just doing ids_only...
       #   # this will be deleted but we want it so that we can
       #   # limit it to 1 query per class instead of one per result.
       #   "matches_by_class" => {
-      #     "FooBar"   => [list, of, ids, not, class, prefixed],
-      #     "BarModel" => [list, of, ids, not, class, prefixed]
+      #     "FooBar"   => [array, of, ids, not, class, prefixed],
+      #     "BarModel" => [array, of, ids, not, class, prefixed]
       #   }
       # }
 
@@ -420,6 +420,7 @@ module Search
         else
           results["matches_by_class"][klass_name][id]
         end
+
         # it's possible the search index is referencing an object
         # that no longer exists in the db.
         # in that case maybe_obj will be nil
@@ -458,13 +459,14 @@ module Search
 
       hits.each do |x|
         response["matching_ids"] << x[string_primary_key]
-
         next if ids_only
 
         object_class = x["object_class"]
         response["object_classes"] << object_class
 
+        # set up a default array to add to
         response["matches_by_class"][object_class] = [] unless response["matches_by_class"].has_key?(object_class)
+
         response["matches_by_class"][object_class] << if !has_class_prefixed_search_ids?
           x[string_primary_key]
         elsif x.has_key?("original_document_id")
