@@ -265,6 +265,9 @@ For example: `Note.search("search term", filtered_by_class: false)`
 will return all matching `Note` results, as well as results for _all_ the 
 other models that share the same index as `Note`.
 
+⚠ Models sharing the same index must share the same primary key field as well.
+This is a known limitation of the system.
+
 ## Searching
 
 To get a list of all the matching objects in the order returned by the search engine 
