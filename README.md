@@ -294,7 +294,8 @@ E.g. `MyModel.search("search term", include_metadata: false)`
   - limit results to the class you initiated the search from. E.g. `Note.search("foo")` will only return results from the `Note` class even if there are records from other classes in the same index.
   - defaults to `true`
 - `include_metadata`
-  - include the metadata about the search results provided by Meilisearch. If true (default) there will be a `"search_result_metadata"` key, with a hash of the Meilisearch metadata.
+  - include the metadata about the search results provided by Meilisearch. If true (default) there will be a `"search_result_metadata"` key, with a hash of the Meilisearch metadata. 
+  - You'll likely need this in order to support pagination, however if you just want to return a single page worth of data, you can set this to `false` to discard it.
   - defaults to `true`
 
 ### Example Search Results
@@ -311,8 +312,12 @@ Note.search('foo', ids_only: true)
     "64483e63906b1d84f149717a"
   ],
   "search_result_metadata" => {
-          "query"=>query_string, "processingTimeMs"=>1, "limit"=>50,
-          "offset"=>0, "estimatedTotalHits"=>33, "nbHits"=>33
+          "query"=>query_string, 
+          "processingTimeMs"=>1, 
+          "limit"=>50,
+          "offset"=>0, 
+          "estimatedTotalHits"=>33, 
+          "nbHits"=>33
   }
 }
 ```
