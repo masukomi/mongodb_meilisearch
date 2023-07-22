@@ -114,18 +114,26 @@ module Search
     # Mongoid::Document objects sorted by match strength. It will ALSO have a key named
     # search_result_metadata which contains a hash with the following information
     # from Meilisearch:
-    # - query [String]
-    # - processingTimeMs [Integer]
-    # - limit [Integer]
-    # - offset [Integer]
+    # - query              [String]
+    # - processingTimeMs   [Integer]
+    # - limit              [Integer]
+    # - offset             [Integer]
     # - estimatedTotalHits [Integer]
-    # - nbHits [Integer]
+    # - nbHits             [Integer]
+    #
+    # @example
+    #   Note.search("foo bar") # returns Notes
+    #   Note.search("foo bar", filtered_by_class: false) # returns Notes & Tasks
+    #
+    #
     def search(search_string,
                options: search_options,
                ids_only: false,
                filtered_by_class: true,
                include_metadata: true)
       pk = primary_search_key
+
+      # TODO: break this if/else out into a separate function
       if ids_only
         options.merge!({attributesToRetrieve: [pk.to_s]})
       else
@@ -137,14 +145,15 @@ module Search
           end
         end
       end
+
       filter_search_options_by_class!(options) if filtered_by_class
 
       # response looks like this
-      # - normally there are more fields in "hits" hashes
-      #   but we've restricted it to just the key we need to look up objects
       # {
       #   "hits" => [{
-      #     "id" => 1
+      #     "id" => 1, # or your primary key if something custom
+      #     "object_class" => "MyClass",
+      #     "original_document_id" => "6436ac83906b1d2f6b3b1383"
       #   }],
       #   "offset" => 0,
       #   "limit" => 20,
@@ -152,19 +161,34 @@ module Search
       #   "query" => "carlo"
       # }
       response = raw_search(search_string, options)
-      results = extract_ordered_ids_from_hits(response["hits"], pk, ids_only)
+
+      # matching_ids is coming from the id field by default,
+      # but would be from your custom primary key if you defined that.
+      #
+      # IF you're not sharing an index with multiple models,
+      # and thus has_prefixed_class_ids? is false
+      # these would NOT be prefixed with the class name
+      #
       # results =
       # {
-      #   "matching_ids" => [array, of, ids, possibly, class, prefixed]
+      #   "matching_ids" => ["FooModel_1234",
+      #                      "BarModel_1234",
+      #                      "FooModel_2345",
+      #                      "FooModel_3456"],
+      #   "object_classes" => ["FooModel",
+      #                        "BarModel",
+      #                        "FooModel",
+      #                        "FooModel"]
       #
-      #   # if we're NOT just doing ids_only...
-      #   # this will be deleted but we want it so that we can
-      #   # limit it to 1 query per class instead of one per result.
+      #   # want ids grouped by class so that we can
+      #   # limit MongoDB interactions to 1 query per class
+      #   # instead of one per id returned.
       #   "matches_by_class" => {
-      #     "FooBar"   => [array, of, ids, not, class, prefixed],
-      #     "BarModel" => [array, of, ids, not, class, prefixed]
+      #     "FooModel" => [<array of ids not class prefixed>],
+      #     "BarModel" => [<array of ids not class prefixed>]
       #   }
       # }
+      results = extract_ordered_ids_from_hits(response["hits"], pk, ids_only)
 
       if response["hits"].size == 0 || ids_only
         # TODO change it to `matches` from `matching_ids`
@@ -185,31 +209,12 @@ module Search
         ((pk == :id) ? :_id : pk)
       )
 
-      # we _could_ return "matches_by_class" to users
-      # and they _may_ be useful, but
-      # doing so also implies the need for matches_by_class
-      # with ids_only == true and supporting the resulting variety
-      # of possible responeses from this method was too much.
-      # Maybe if someone has a compelling reason for it
-      # we can add in full support for this in a future version.
-      results.delete("matches_by_class")
+      only_matches = results.slice("matches")
 
-      # don't need these anymore
-      results.delete("matching_ids")
-
-      # "object_classes" is just leftover internal cruft
-      # it's going to look like ["Note", "Note", "Task", "Note"]
-      results.delete("object_classes")
-
-      # results is now
-      # {
-      #   matching_ids => [list, o, ids],
-      #   matching_objects => [list o objects]
-      # }
       if include_metadata
-        merge_results_with_metadata(results, response)
+        merge_results_with_metadata(only_matches, response)
       else
-        results
+        only_matches
       end
     end
 
@@ -390,9 +395,13 @@ module Search
 
     private
 
-    def lookup_matches_by_class(results, primary_key)
+    def lookup_matches_by_class!(results, primary_key)
+      # matches_by_class contains a hash of
+      # "FooModel" => [<array of ids>]
+      #
+      # when we exit it will be
+      # "FooModel" => { "id123" => #FooModel<_id: 123> }
       results["matches_by_class"].each do |klass, ids|
-        # hash of string_id => obj
         results["matches_by_class"][klass] = Hash[* klass
           .constantize
           .in(primary_key => ids)
@@ -403,8 +412,15 @@ module Search
     end
 
     def populate_results_from_ids!(results, primary_key)
-      lookup_matches_by_class(results, primary_key)
+      lookup_matches_by_class!(results, primary_key)
+      # ^^^
+      # results["matches_by_class"] is now a hash with
+      # class names as keys, and values of hashes with
+      # id => instance object
+      # "FooModel" => { "id123" => #FooModel<_id: 123> }
 
+      # this will be an array of Mongoid::Document
+      # objects
       results["matches"] = []
 
       # ok we now have
@@ -413,17 +429,12 @@ module Search
       # we NEED matches in the same order as "matching_ids"
       # because that's the order Meilisearch felt best matched your query
       #
-      results["matching_ids"].each_with_index do |id, index|
-        klass_name = results["object_classes"][index]
-        maybe_obj = if has_class_prefixed_search_ids?
-          results["matches_by_class"][klass_name][id.sub(/^\w+?_/, "")]
-        else
-          results["matches_by_class"][klass_name][id]
-        end
+      results["matching_ids"].each do |data|
+        klass       = data[:klass]
+        original_id = data[:original_id]
 
-        # it's possible the search index is referencing an object
-        # that no longer exists in the db.
-        # in that case maybe_obj will be nil
+        maybe_obj   = results["matches_by_class"][klass][original_id]
+
         results["matches"] << maybe_obj if maybe_obj
       end
 
@@ -445,38 +456,46 @@ module Search
     # @returns [Hash[String, Array[String]]] - a hash with class name as the key
     #   and an array of ids as the value -> ClassName -> [id, id, id]
     def extract_ordered_ids_from_hits(hits, primary_key, ids_only)
+      # TODO better name than matching_ids
+      #      also change in other places in this file
       response = {"matching_ids" => []}
       unless ids_only
         response["matches_by_class"] = {}
-        # we need object_clases because you COULD
-        # have multiple models in an index but also
-        # have has_class_prefixed_search_ids? return false
-        # because you've got some funky ids guaranteed not to overlap
-        response["object_classes"] = []
       end
       string_primary_key = primary_key.to_s
       return response if hits.empty?
 
-      hits.each do |x|
-        response["matching_ids"] << x[string_primary_key]
-        next if ids_only
-
-        object_class = x["object_class"]
-        response["object_classes"] << object_class
-
-        # set up a default array to add to
-        response["matches_by_class"][object_class] = [] unless response["matches_by_class"].has_key?(object_class)
-
-        response["matches_by_class"][object_class] << if !has_class_prefixed_search_ids?
-          x[string_primary_key]
-        elsif x.has_key?("original_document_id")
-          x["original_document_id"]
-        # DOES have class prefixed search ids
+      hits.each do |hit|
+        hit_id = hit[string_primary_key]
+        if ids_only
+          response["matching_ids"] << hit_id
         else
-          # DOES have class prefixed search ids but
-          # DOES NOT have original_document_id
-          # This is only possible if they've overridden #search_indexable_hash
-          x[string_primary_key].sub(/^\w+_/, "")
+          object_class = hit["object_class"]
+          match_info = {
+            id: hit_id,
+            klass: object_class
+          }
+
+          original_id = if !has_class_prefixed_search_ids?
+            hit_id
+          elsif hit.has_key?("original_document_id")
+            # DOES have class prefixed search ids
+            hit["original_document_id"]
+          else
+            # DOES have class prefixed search ids but
+            # DOES NOT have original_document_id
+            # This is only possible if they've overridden #search_indexable_hash
+            hit_id.sub(/^\w+_/, "")
+          end
+
+          match_info[:original_id] = original_id
+
+          # set up a default array to add to
+          unless response["matches_by_class"].has_key?(object_class)
+            response["matches_by_class"][object_class] = []
+          end
+          response["matches_by_class"][object_class] << original_id
+          response["matching_ids"] << match_info
         end
       end
 
