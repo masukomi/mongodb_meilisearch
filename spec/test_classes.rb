@@ -8,6 +8,17 @@ class BasicTestModel
   field :name, type: String
   field :description, type: String
   field :age, type: Integer
+
+  has_many :related_models
+  belongs_to :related_model
+end
+
+class RelatedModel
+  include Mongoid::Document
+  include Search::InstanceMethods
+  extend Search::ClassMethods
+  field :name, type: String
+  has_many :basic_test_models
 end
 
 class UnfilterableTestModel < BasicTestModel

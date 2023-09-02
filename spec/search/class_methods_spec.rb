@@ -35,6 +35,12 @@ RSpec.describe Search::ClassMethods do
       )
     end
 
+    it "does not include foreign keys in default searchable attributes" do
+      expect(BasicTestModel.searchable_attributes).to(
+        match_array(%i[_id name description age])
+      )
+    end
+
     context "with class filtered search options" do
       let!(:class_filter_string) { "object_class = BasicTestModel" }
 

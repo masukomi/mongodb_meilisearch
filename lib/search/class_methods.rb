@@ -339,7 +339,12 @@ module Search
     # Please don't override this. Define SEARCHABLE_ATTRIBUTES instead.
     # @return [Array[Symbol]] an array of attribute names as symbols
     def default_searchable_attributes
-      attribute_names.map { |n| n.to_sym }
+      good_fields = []
+      fields.each { |name, obj|
+        next if name == "_type"
+        good_fields.push(name.to_sym) unless obj.is_a? Mongoid::Fields::ForeignKey
+      }
+      good_fields
     end
 
     # This returns the list from SEARCHABLE_ATTRIBUTES if defined,
