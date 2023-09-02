@@ -79,7 +79,8 @@ You can override these methods if needed, but you're unlikely to want to.
 
 Assuming you've done the above a new index will be created with a name that
 corresponds to your model's  name, only in snake case. All of your models
-attributes will be indexed and [filterable](https://www.meilisearch.com/docs/learn/fine_tuning_results/filtering).
+fields will be indexed and [filterable](https://www.meilisearch.com/docs/learn/fine_tuning_results/filtering).
+
 
 ### Example Rails Model
 
@@ -104,6 +105,9 @@ class Person
 end
 ```
 
+Note that that _unless you configure it otherwise_ the ids of `belongs_to` objects 
+will not be searchable. This is because they're random strings that no human's ever
+going to be searching for, and we don't want to waste RAM or storage.
 
 ### Going Beyond The Defaults 
 This module strives for sensible defaults, but you can override them with the
@@ -163,7 +167,7 @@ as `original_document_id`. This is useful if you want to be able to retrieve the
 You probably don't want to index _all_ the fields. For example, 
 unless you intend to allow users to sort by when a record was created, 
 there's no point in recording it's `created_at` in the search index. 
-It'll just waste bandwidth, memory, and disk space.
+It'll just waste bandwidth, memory, and disk space. 
 
 Define a `SEARCHABLE_ATTRIBUTES` constant with an array of strings to limit things. 
 By default these will _also_ be the fields you can filter on. Note that 
@@ -179,6 +183,15 @@ document's `BSON::ObjectId`.
   SEARCHABLE_ATTRIBUTES = searchable_attributes - [:created_at]
 ```
 
+#### Including Foreign Key data
+If, for example, your `Person` `belongs_to: group` 
+and you wanted that group's id to be searchable you would include `group_id`
+in the list. 
+
+If you don't specify any `SEARCHABLE_ATTRIBUTES`, the default list will
+exclude any fields that are `Mongoid::Fields::ForeignKey` objects.
+
+
 #### Getting Extra Specific
 If your searchable data needs to by dynamically generated instead of 
 just taken directly from the `Mongoid::Document`'s attributes you can
@@ -187,8 +200,8 @@ must return a hash, and that hash must include the following keys:
 - `"id"` - a string that uniquely identifies the record
 - `"object_class"` the name of the class that this record corresponds to.
 
-The value of `"object_class"` is usually just `self.class.name`. Additionally,
-this is something specific to this gem, and not Meilisearch itself.
+The value of `"object_class"` is usually just `self.class.name`. 
+This is something specific to this gem, and not Meilisearch itself.
 
 See `InstanceMethods#search_indexable_hash` for an example. 
 

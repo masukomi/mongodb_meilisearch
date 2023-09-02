@@ -80,6 +80,21 @@ RSpec.describe Search::InstanceMethods do
   context "when generating an indexable hash" do
     let(:hash) { instance.search_indexable_hash }
 
+    context "when searchable_attributes are not restricted" do
+      before do
+        related = RelatedModel.new(name: "test related model")
+        instance.related_model = related
+      end
+
+      it "doesn't include ids of belongs_to relations" do
+        expect(hash.keys.include?(:related_model_id)).not_to(eq(true))
+      end
+
+      it "includes all the fields, id, and object_class" do
+        expect(hash.keys).to(match_array(%w[id name description age object_class]))
+      end
+    end
+
     context "when searchable_attributes are restricted" do
       before do
         allow(BasicTestModel).to(
@@ -88,7 +103,7 @@ RSpec.describe Search::InstanceMethods do
         )
       end
 
-      it "onlies use searchable attributes", :aggregate_failures do
+      it "only uses searchable attributes", :aggregate_failures do
         expect(hash.keys.include?("name")).to(eq(true))
         expect(hash.keys).not_to(match_array(%w[description age]))
       end
@@ -100,6 +115,20 @@ RSpec.describe Search::InstanceMethods do
 
       it "adds object_class if missing" do
         expect(hash.keys.include?("object_class")).to(eq(true))
+      end
+
+      it "allows you to specify realtion ids", :aggregate_failures do
+        allow(BasicTestModel).to(
+          receive(:searchable_attributes)
+            .and_return([:name, :related_model_id])
+        )
+        related = RelatedModel.new(name: "test related model")
+        instance.related_model = related
+        expect(hash.keys.include?("related_model_id")).to(eq(true))
+        # NOTE: the value is a BSON object
+        # You're going to have to define a custom search_indexable_hash
+        # method to do something different
+        expect(hash["related_model_id"]).to(eq(related._id))
       end
     end
 
