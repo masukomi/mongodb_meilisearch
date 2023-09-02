@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    mongodb_meilisearch (1.0.0)
+    mongodb_meilisearch (1.0.1)
       meilisearch
       mongoid (~> 7.0)
       rails
