@@ -13,8 +13,8 @@ module Search
         max_retries = ENV.fetch("MEILISEARCH_MAX_RETRIES", 2).to_i
         if url.present? && api_key.present?
           @client = MeiliSearch::Client.new(url, api_key,
-            timeout: timeout,
-            max_retries: max_retries)
+                                            timeout: timeout,
+                                            max_retries: max_retries)
         else
           Rails.logger.warn("UNABLE TO CONFIGURE SEARCH. Check env vars.")
           @client = nil
