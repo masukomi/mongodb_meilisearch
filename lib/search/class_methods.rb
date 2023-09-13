@@ -378,27 +378,91 @@ module Search
     # @return [Array[Symbol]] an array of symbols corresponding to
     # filterable attribute names.
     def filterable_attributes
-      attributes = []
-      if constants.include?(:FILTERABLE_ATTRIBUTE_NAMES)
-        # the union operator is to guarantee no-one tries to create
-        # invalid filterable attributes
-        attributes = const_get(:FILTERABLE_ATTRIBUTE_NAMES).map(&:to_sym) & searchable_attributes
-      elsif !unfilterable?
-        attributes = searchable_attributes
-      end
-      attributes << "object_class" unless attributes.include? "object_class"
-      attributes
+      @_filterable_attributes ||= sort_or_filter_attributes(:filterable)
+    end
+
+    def sortable_attributes
+      @_sortable_attributes ||= sort_or_filter_attributes(:sortable)
+    end
+
+    # For more details on sortable attributes see the official
+    # Meilisearch docs
+    # https://www.meilisearch.com/docs/reference/api/settings#sortable-attributes
+    #
+    #
+    # @return [Array] - an array of attributes configured as sortable
+    # in the index.
+    def meilisearch_sortable_attributes
+      # Search::Client.instance.http_get(
+      search_index.http_get(
+        "/indexes/#{search_index}/settings/sortable-attributes"
+      )
+    end
+
+    def meilisearch_filterable_attributes
+      # Search::Client.instance.http_get(
+      search_index.http_get(
+        "/indexes/#{search_index}/settings/filterable-attributes"
+      )
     end
 
     # Updates the filterable attributes in the search index.
     # Note that this forces Meilisearch to rebuild your index,
     # which may take time. Best to run this in a background job
     # for large datasets.
-    def set_filterable_attributes!(new_attributes = filterable_attributes)
+    def set_filterable_attributes(new_attributes = filterable_attributes)
       search_index.update_filterable_attributes(new_attributes)
     end
 
+    def set_filterable_attributes!(new_attributes = filterable_attributes)
+      # meilisearch-ruby doesn't provide a synchronous version of this
+      task = set_filterable_attributes(new_attributes)
+      search_index.wait_for_task(task["taskUid"])
+    end
+
+    # Updates the sortable attributes in the search index.
+    # Note that this forces Meilisearch to rebuild your index,
+    # which may take time. Best to run this in a background job
+    # for large datasets.
+    def set_sortable_attributes(new_attributes = sortable_attributes)
+      search_index.update_sortable_attributes(new_attributes)
+    end
+
+    def set_sortable_attributes!(new_attributes = sortable_attributes)
+      # meilisearch-ruby doesn't provide a synchronous version of this
+      task = set_sortable_attributes(new_attributes)
+      search_index.wait_for_task(task["taskUid"])
+    end
+
     private
+
+    # @param [Symbol] which - either :sortable or :filterable
+    def sort_or_filter_attributes(which)
+      constant_symbol = (which == :sortable) ? :SORTABLE_ATTRIBUTE_NAMES : :FILTERABLE_ATTRIBUTE_NAMES
+
+      if which == :filterable && unfilterable? && constants.include?(constant_symbol)
+        raise "You can't define FILTERABLE_ATTRIBUTE_NAMES & UNFILTERABLE_IN_SEARCH on #{self.class.name}"
+      end
+      # with that out of the way...
+
+      attributes = []
+      # sortable == defined or filterable
+      # filterable == defined or search
+      if constants.include?(constant_symbol)
+        # the union operator is to guarantee no-one tries to create
+        # invalid filterable attributes
+        attributes = const_get(constant_symbol).map(&:to_sym) & searchable_attributes
+      elsif which == :filterable && !unfilterable?
+        attributes = searchable_attributes
+      elsif which == :sortable
+        # yes this is recursive...
+        attributes = filterable_attributes
+      end
+      # we need object_class even if you're unfilterable, because
+      # we need to be able to filter by object_class in shared indexes.
+      attributes << :object_class unless attributes.include? :object_class
+      attributes
+    end
 
     def lookup_matches_by_class!(results, primary_key)
       # matches_by_class contains a hash of
@@ -529,6 +593,7 @@ module Search
       add_documents(documents, async: async) if documents.size != 0
 
       set_filterable_attributes!
+      set_sortable_attributes!
     end
   end
 end

@@ -235,7 +235,19 @@ on a background thread. Note that filtering is managed at the index level, not t
 record level. By setting filterable attributes you're giving Meilisearch
 guidance on what to do when indexing your data.
 
+Note that you will encounter problems in a shared index if you try and
+filter on a field that one of the contributing models doesn't have set
+as a filterable field, or doesn't have at all.
 
+### Sortable Fields
+
+Sortable fields work in essentially the same way as filterable fields.
+By default it's the same as your `FILTERABLE_ATTRIBUTE_NAMES` which, in turn, defaults to your `SEARCHABLE_ATTRIBUTES` You can
+override it by setting `SORTABLE_ATTRIBUTE_NAMES`. 
+
+Note that you will encounter problems in a shared index if you try and
+sort on a field that one of the contributing models doesn't have set
+as a sortable field, or doesn't have at all.
 
 ### Indexing things
 **Important note**: By default anything you do that updates the search index (adding, removing, or changing) happens asynchronously. 

@@ -46,4 +46,5 @@ end
 
 # we need a 2nd class with the same SEARCH_INDEX_NAME
 class OtherExtendedTestModel < ExtendedTestModel
+  SORTABLE_ATTRIBUTE_NAMES = %w[name]
 end

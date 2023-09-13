@@ -4,6 +4,7 @@ require "rspec"
 require "spec_helper"
 require "test_classes"
 
+# rubocop:disable RSpec/MultipleMemoizedHelpers, RSpec/VerifiedDoubles
 RSpec.describe Search::ClassMethods do
   # NOTE: things intentionally untested
   # - raw_search
@@ -39,6 +40,106 @@ RSpec.describe Search::ClassMethods do
       expect(BasicTestModel.searchable_attributes).to(
         match_array(%i[_id name description age])
       )
+    end
+
+    describe "filterable & sortable attributes" do
+      let(:expected_fields) { BasicTestModel.default_searchable_attributes + [:object_class] }
+      let(:search_index) { double("search_index") }
+
+      before do
+        allow(BasicTestModel).to(
+          receive(:search_index)
+            .and_return(search_index)
+        )
+        allow(search_index).to(receive(:wait_for_task).and_return({bogus: :response}))
+      end
+
+      context "with unfilterable test model" do
+        it "has an not-quite empty list of filterable attributes" do
+          # "not-quite empty" because even if _you_ don't need it filterable
+          # this gem does.
+          expect(UnfilterableTestModel.filterable_attributes).to(eq([:object_class]))
+        end
+      end
+
+      it "has filterable attributes = search fields + object_class" do
+        expect(BasicTestModel.filterable_attributes).to(
+          match_array(expected_fields)
+        )
+      end
+
+      it "has sortable_attributes = search fields + object_class" do
+        expect(BasicTestModel.sortable_attributes).to(
+          match_array(expected_fields)
+        )
+      end
+
+      it "filters on object_class even if UNFILTERABLE_IN_SEARCH" do
+        expect(UnfilterableTestModel.filterable_attributes).to(
+          contain_exactly(:object_class)
+        )
+      end
+
+      it "sends the default filterable attributes to meilisearch" do
+        expect(search_index).to(
+          receive(:update_filterable_attributes)
+            .with(expected_fields)
+            .and_return({"taskUid" => "abcd1234"})
+        )
+        BasicTestModel.set_filterable_attributes!
+      end
+
+      context "when filterable attributes are defined" do
+        let(:custom_filter_fields) { ExtendedTestModel::FILTERABLE_ATTRIBUTE_NAMES.map(&:to_sym) + [:object_class] }
+
+        it "uses specification + object_class for filterable fields" do
+          expect(ExtendedTestModel.filterable_attributes)
+            .to(eq(custom_filter_fields))
+        end
+
+        it "has sortable attributes matching filterable attributes" do
+          expect(ExtendedTestModel.sortable_attributes)
+            .to(eq(custom_filter_fields))
+        end
+
+        it "sends the user's filterable attributes to meilisearch" do
+          expect(search_index)
+            .to(
+              receive(:update_filterable_attributes)
+                .with(custom_filter_fields)
+                .and_return({"taskUid" => "abcd1234"})
+            )
+          ExtendedTestModel.set_filterable_attributes!
+        end
+
+        context "when sortable attributes are ALSO defined" do
+          let(:custom_sort_fields) {
+            OtherExtendedTestModel::SORTABLE_ATTRIBUTE_NAMES.map(&:to_sym) \
+            + [:object_class]
+          }
+
+          it "does not match filterable attributes" do
+            expect(OtherExtendedTestModel.sortable_attributes).not_to(
+              eq(OtherExtendedTestModel.filterable_attributes)
+            )
+          end
+
+          it "uses specification + object_class for sortable fields" do
+            expect(OtherExtendedTestModel.sortable_attributes)
+              .to(eq(custom_sort_fields))
+          end
+
+          it "sends the user's sortable attributes to meilisearch" do
+            expect(search_index)
+              .to(
+                receive(:update_sortable_attributes)
+                  .with(custom_sort_fields)
+                  .and_return({"taskUid" => "abcd1234"})
+              )
+            OtherExtendedTestModel.set_sortable_attributes!
+          end
+        end
+      end
     end
 
     context "with class filtered search options" do
@@ -310,17 +411,11 @@ RSpec.describe Search::ClassMethods do
     # rubocop:enable RSpec/MultipleMemoizedHelpers
   end
 
-  context "with unfilterable test model" do
-    it "has an not-quite empty list of filterable attributes" do
-      # "not-quite empty" because even if _you_ don't need it filterable
-      # this gem does.
-      expect(UnfilterableTestModel.filterable_attributes).to(eq(["object_class"]))
-    end
-  end
-
   context "with custom primary key" do
     it "reflects the correct primary search key" do
-      expect(CustomPrimaryKeyModel.primary_search_key).to(eq(CustomPrimaryKeyModel::PRIMARY_SEARCH_KEY))
+      expect(CustomPrimaryKeyModel.primary_search_key)
+        .to(eq(CustomPrimaryKeyModel::PRIMARY_SEARCH_KEY))
     end
   end
 end
+# rubocop:enable RSpec/MultipleMemoizedHelpers, RSpec/VerifiedDoubles
