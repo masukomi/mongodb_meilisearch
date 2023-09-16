@@ -226,7 +226,8 @@ Then call the following. If `FILTERABLE_ATTRIBUTE_NAMES` is defined it will use 
 otherwise it will use whatever `.searchable_attributes` returns.
 
 ```ruby
-MyModel.set_filterable_attributes!
+MyModel.set_filterable_attributes! # synchronous 
+MyModel.set_filterable_attributes  # asynchronous
 ``` 
 
 This will cause Meilisearch to reindex all the records for that index. If you
@@ -249,12 +250,17 @@ Note that you will encounter problems in a shared index if you try and
 sort on a field that one of the contributing models doesn't have set
 as a sortable field, or doesn't have at all.
 
+```ruby
+MyModel.set_sortable_attributes! # synchronous 
+MyModel.set_sortable_attributes  # asynchronous
+``` 
+
 ### Indexing things
 **Important note**: By default anything you do that updates the search index (adding, removing, or changing) happens asynchronously. 
 
 Sometimes, especially when debugging something on the console, you want to
-update the index _synchronously_. The convention used in this codebase is that
-the synchronous methods  are the ones with the bang.  Similar to how mutating
+update the index _synchronously_. The convention used in this codebase - and in the meilisearch-ruby library we build on - is that
+the synchronous methods are the ones with the bang.  Similar to how mutating
 state is potentially dangerous and noted with a bang, using synchronous methods
 is potentially problematic for your users, and thus noted with a bang.
 
@@ -276,7 +282,9 @@ MyModel.reindex! # runs synchronously
 **Reindexing**  
 Calling `MyModel.reindex!` deletes all the existing records from the current index,
 and then reindexes all the records for the current model. It's safe to run this
-even if there aren't any records. 
+even if there aren't any records. In addition to re-indexing your models,
+it will update/set the "sortable" and "filterable" fields on the 
+relevant indexes.
 
 Note: reindexing behaves slightly differently than all the other methods.
 It runs semi-asynchronously by default. The Asynchronous form will first, 
