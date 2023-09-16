@@ -1116,12 +1116,6 @@ Style/ComparableClamp:
 Style/ConcatArrayLiterals:
   Enabled: false
 
-Style/ConditionalAssignment:
-  Enabled: true
-  EnforcedStyle: assign_to_condition
-  SingleLineConditionsOnly: true
-  IncludeTernaryExpressions: true
-
 Style/ConstantVisibility:
   Enabled: false
 
@@ -1857,3 +1851,11 @@ Style/YodaExpression:
 Style/ZeroLengthPredicate:
   Enabled: false
 
+# this is horrible for readability
+# and maintainability
+Style/ConditionalAssignment:
+  Enabled: false
+
+# I'll nest how I wanna nest! :p
+RSpec/NestedGroups:
+  Enabled: false
