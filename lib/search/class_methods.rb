@@ -592,8 +592,13 @@ module Search
       end
       add_documents(documents, async: async) if documents.size != 0
 
-      set_filterable_attributes!
-      set_sortable_attributes!
+      if async
+        set_filterable_attributes
+        set_sortable_attributes
+      else
+        set_filterable_attributes!
+        set_sortable_attributes!
+      end
     end
   end
 end
