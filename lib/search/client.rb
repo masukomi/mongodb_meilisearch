@@ -30,7 +30,7 @@ module Search
       if @client.respond_to? m.to_sym
         @client.send(m, *args, &block)
       else
-        raise ArgumentError.new("Method `#{m}` doesn't exist.")
+        raise ArgumentError.new("Method `#{m}` doesn't exist in #{@client.inspect}.")
       end
     end
 

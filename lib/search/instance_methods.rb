@@ -2,6 +2,7 @@ module Search
   module InstanceMethods
     # Adds this record to the search index asynchronously
     def add_to_search
+      self.class.configure_attributes_and_index_if_needed!
       search_index.add_documents(
         [search_indexable_hash],
         primary_search_key.to_s
@@ -10,6 +11,7 @@ module Search
 
     # Adds this record to the search index synchronously
     def add_to_search!
+      self.class.configure_attributes_and_index_if_needed!
       index     = search_index
       documents = [search_indexable_hash]
       pk        = primary_search_key.to_s

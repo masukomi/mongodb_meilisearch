@@ -3,6 +3,7 @@
 require "rspec"
 require "spec_helper"
 require "test_classes"
+require "meilisearch"
 
 RSpec.describe Search::InstanceMethods do
   let(:instance) {
@@ -12,14 +13,32 @@ RSpec.describe Search::InstanceMethods do
   let(:search_index) {
     double("MeiliSearch::index")
   }
+  let(:search_client) {
+    double("Search::Client")
+  }
   # rubocop:enable RSpec/VerifiedDoubles
 
   context "when interacting with the index" do
     before do
+      allow(Search::Client).to(
+        receive(:instance)
+          .and_return(search_client)
+      )
       allow(BasicTestModel).to(
         receive(:search_index)
           .and_return(search_index)
       )
+      allow(BasicTestModel).to(receive(:configure_attributes_and_index_if_needed!))
+    end
+
+    it "guarantees index, sorting, and filtering are configured" do
+      expect(BasicTestModel).to(receive(:configure_attributes_and_index_if_needed!))
+      allow(search_index).to(
+        receive(:add_documents)
+          .with(anything, anything)
+          .and_return(true)
+      )
+      instance.add_to_search
     end
 
     it "adds the document to search asynchronously" do

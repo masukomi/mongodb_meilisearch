@@ -323,6 +323,16 @@ Be careful to not add documents that are already in the index.
   WARNING: if you think you should use this, you're probably 
   mistaken. 
 
+#### Indexes 
+By default every model gets its own search index. This means that 
+`Foo.search("some text")` will only search `Foo` objects. To have a
+search cross objects you'll need to use a "Shared Index" (see below).
+
+
+The name of the index isn't important when not using shared indexes.
+By default a model's index is the snake cased form of the class name. 
+For example, data for `MyWidget` models will be stored in the `my_widget` index.
+
 #### Shared indexes
 Imagine you have a `Note` and a `Comment` model, sharing an index so that
 you can perform a single search and have search results for both models
@@ -442,10 +452,14 @@ To invoke any of Meilisearch's custom search options (see [their documentation](
 
 `MyModel.search("search term", options: <my custom options>)`
 
-The Meilisearch-ruby gem should be able to convert keys from snake case to 
+Currently the Meilisearch-ruby gem can convert keys from snake case to 
 camel case. For example `hits_per_page` will become `hitsPerPage`. 
-Meilisearch ultimately wants camel case. Follow their documentation 
-to see what's available and what type of options to pass it. Note that your 
+Meilisearch ultimately wants camel case (`camelCase`) parameter keys, 
+_but_ `meilisearch-ruby` wants snake case (`snake_case`). 
+
+Follow Meilisearch's documentation 
+to see what's available and what type of options to pass it, but convert 
+them to snake case first. Note that your 
 options keys and values must all be simple JSON values.
 
 If for some reason that still isn't enough, you can work with the 

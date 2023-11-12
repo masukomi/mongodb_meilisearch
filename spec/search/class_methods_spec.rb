@@ -3,6 +3,7 @@
 require "rspec"
 require "spec_helper"
 require "test_classes"
+require "meilisearch"
 
 # rubocop:disable RSpec/MultipleMemoizedHelpers, RSpec/VerifiedDoubles
 RSpec.describe Search::ClassMethods do
@@ -22,6 +23,15 @@ RSpec.describe Search::ClassMethods do
   }
 
   context "with basic test model" do
+    let(:search_index) { double("search_index") }
+
+    before do
+      allow(BasicTestModel).to(
+        receive(:search_index)
+          .and_return(search_index)
+      )
+    end
+
     it "has a primary search key of :id" do
       expect(BasicTestModel.primary_search_key).to(eq(:id))
     end
@@ -42,15 +52,66 @@ RSpec.describe Search::ClassMethods do
       )
     end
 
+    describe "#configure_attributes_and_index_if_needed!" do
+      # rubocop:disable RSpec/ExampleLength
+      it "creates an index if there isn't one" do
+        allow(search_index).to(
+          receive(:get_filterable_attributes)
+            .and_raise(
+              ::MeiliSearch::ApiError.new(
+                404,
+                "Index `basic_test_model` not found.",
+                "Invalid Request"
+              )
+            )
+        )
+        allow(search_index).to(
+          receive(:wait_for_task)
+            .and_return(true) # prolly not what it actually returns
+        )
+        expect(Search::Client.instance).to(
+          receive(:create_index)
+            .with("basic_test_model")
+        )
+        allow(BasicTestModel).to(receive(:set_sortable_attributes).and_return(true))
+        allow(BasicTestModel).to(receive(:set_filterable_attributes).and_return(true))
+        BasicTestModel.configure_attributes_and_index_if_needed!
+      end
+      # rubocop:enable RSpec/ExampleLength
+
+      it "sets filterable attributes if needed" do
+        allow(search_index).to(
+          receive(:get_filterable_attributes)
+            .and_return([])
+        )
+        allow(BasicTestModel).to(receive(:set_sortable_attributes).and_return(true))
+        expect(BasicTestModel).to(receive(:set_filterable_attributes).and_return(true))
+
+        BasicTestModel.configure_attributes_and_index_if_needed!
+      end
+
+      it "sets sortable attributes if needed" do
+        allow(search_index).to(
+          receive(:get_filterable_attributes)
+            .and_return([])
+        )
+        allow(BasicTestModel).to(receive(:set_filterable_attributes).and_return(true))
+        expect(BasicTestModel).to(receive(:set_sortable_attributes).and_return(true))
+
+        BasicTestModel.configure_attributes_and_index_if_needed!
+      end
+
+      it "doesn't set filterable attributes for unfilterable models" do
+        allow(BasicTestModel).to(receive(:unfilterable?).and_return(true))
+        expect(BasicTestModel).not_to(receive(:set_filterable_attributes))
+        BasicTestModel.configure_attributes_and_index_if_needed!
+      end
+    end
+
     describe "filterable & sortable attributes" do
       let(:expected_fields) { BasicTestModel.default_searchable_attributes + [:object_class] }
-      let(:search_index) { double("search_index") }
 
       before do
-        allow(BasicTestModel).to(
-          receive(:search_index)
-            .and_return(search_index)
-        )
         allow(search_index).to(receive(:wait_for_task).and_return({bogus: :response}))
       end
 

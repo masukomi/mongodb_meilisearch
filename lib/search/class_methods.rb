@@ -109,6 +109,7 @@ module Search
     # @param filtered_by_class [Boolean] - defaults to filtering results by the class
     #        your searching from. Ex. Foo.search("something") it will
     #        have Meilisearch filter on records where `object_class` == `"Foo"`
+    #        This simplifies working with shared indexes.
     # @return [Hash[String, [Array[String | Document]] a hash with keys corresponding
     # to the classes of objects returned, and a value of an array of ids or
     # Mongoid::Document objects sorted by match strength. It will ALSO have a key named
@@ -135,13 +136,13 @@ module Search
 
       # TODO: break this if/else out into a separate function
       if ids_only
-        options.merge!({attributesToRetrieve: [pk.to_s]})
+        options.merge!({attributes_to_retrieve: [pk.to_s]})
       else
         # Don't care what you add, but we need the primary key and object_class
-        options[:attributesToRetrieve] = [] unless options.has_key?(:attributesToRetrieve)
+        options[:attributes_to_retrieve] = [] unless options.has_key?(:attributes_to_retrieve)
         [pk.to_s, "object_class"].each do |attr|
-          unless options[:attributesToRetrieve].include?(attr)
-            options[:attributesToRetrieve] << attr
+          unless options[:attributes_to_retrieve].include?(attr)
+            options[:attributes_to_retrieve] << attr
           end
         end
       end
@@ -260,6 +261,7 @@ module Search
     #    - each document hash is presumed to have been created by way of
     #      search_indexable_hash
     def add_documents(new_documents, async: true)
+      configure_attributes_and_index_if_needed!
       if async
         search_index.add_documents(new_documents, primary_search_key)
       else
@@ -393,17 +395,38 @@ module Search
     # @return [Array] - an array of attributes configured as sortable
     # in the index.
     def meilisearch_sortable_attributes
-      # Search::Client.instance.http_get(
-      search_index.http_get(
-        "/indexes/#{search_index}/settings/sortable-attributes"
-      )
+      @_meilisearch_sortable_attributes ||= search_index.get_sortable_attributes
     end
 
     def meilisearch_filterable_attributes
-      # Search::Client.instance.http_get(
-      search_index.http_get(
-        "/indexes/#{search_index}/settings/filterable-attributes"
-      )
+      @_meilisearch_filterable_attributes ||= search_index.get_filterable_attributes
+    end
+
+    def reset_cached_data!
+      @_meilisearch_filterable_attributes = nil
+      @_filterable_attributes             = nil
+      @_meilisearch_sortable_attributes   = nil
+      @_sortable_attributes               = nil
+    end
+
+    # Guarantees that the filterable attributes have been configured
+    # This should be called before
+    def configure_attributes_and_index_if_needed!
+      return if unfilterable?
+      indexes_filterable_attributes = []
+
+      begin
+        indexes_filterable_attributes = meilisearch_filterable_attributes
+      rescue ::MeiliSearch::ApiError => e
+        # this is expected to happen the first time an instance
+        # of a new model is saved.
+        raise unless e.message.match?(/Index `\S+` not found\./)
+        Search::Client.instance.create_index(search_index_name)
+      end
+
+      return if indexes_filterable_attributes.include?("object_class")
+      set_filterable_attributes
+      set_sortable_attributes
     end
 
     # Updates the filterable attributes in the search index.
@@ -579,7 +602,7 @@ module Search
     def reindex_core(async: true)
       # no point in continuing if this fails...
       delete_all_documents!
-
+      reset_cached_data!
       # this conveniently lines up with the batch size of 100
       # that Mongoid gives us
       documents = []
