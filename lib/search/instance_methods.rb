@@ -44,6 +44,10 @@ module Search
       search_index.delete_document!(send(primary_search_key).to_s)
     end
 
+    def searchable_attributes
+      self.class.searchable_attributes
+    end
+
     # returns a hash of all the attributes
     # if searchable_attributes method is defined
     # it is assumed to return a list of symbols
@@ -57,9 +61,10 @@ module Search
     # in returned results
     def search_indexable_hash
       klass = self.class
-      hash = attributes
-        .to_h
-        .slice(* klass.searchable_attributes.map { |a| a.to_s })
+      # the to_s & to_sym is just safety in case someone
+      # defined searchable_attributes as an array of strings
+      hash = {}
+      searchable_attributes.each { |a| hash[a.to_s] = send(a.to_sym) }
 
       # Meilisearch doesn't like a primary key of _id
       # but Mongoid ids are _id
@@ -69,7 +74,7 @@ module Search
         id = hash.delete("_id").to_s
         new_id = (!klass.has_class_prefixed_search_ids?) ? id : "#{self.class.name}_#{id}"
         hash["id"] = new_id
-      elsif hash.has_key?("id") && !hash[id].is_a?(String)
+      elsif hash.has_key?("id") && !hash["id"].is_a?(String)
         # this is mostly in case it's a BSON::ObjectId
         hash["id"] = hash["id"].to_s
       elsif !hash.has_key?("id")

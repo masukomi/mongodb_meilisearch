@@ -166,9 +166,10 @@ RSpec.describe Search::InstanceMethods do
           .and_return([:id, :name])
       )
       allow(instance).to(
-        receive(:attributes)
-          .and_return({"id" => [1, 2], "name" => "Mary"})
+        receive(:id)
+          .and_return([1, 2])
       )
+
       expect(hash["id"]).to(eq("[1, 2]"))
     end
 
@@ -178,8 +179,8 @@ RSpec.describe Search::InstanceMethods do
           .and_return([:name, :object_class])
       )
       allow(instance).to(
-        receive(:attributes)
-          .and_return({"object_class" => "FooModel", "name" => "Mary"})
+        receive(:object_class)
+          .and_return("FooModel")
       )
 
       expect(hash["object_class"]).to(eq("FooModel"))

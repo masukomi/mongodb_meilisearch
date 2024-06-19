@@ -169,16 +169,19 @@ unless you intend to allow users to sort by when a record was created,
 there's no point in recording it's `created_at` in the search index. 
 It'll just waste bandwidth, memory, and disk space. 
 
-Define a `SEARCHABLE_ATTRIBUTES` constant with an array of strings to limit things. 
-By default these will _also_ be the fields you can filter on. Note that 
-Meilisearch requires there to be an `id` field and it must be a string. 
+Define a `SEARCHABLE_ATTRIBUTES` constant with an array of strings to limit things.
+These are the field names, and/or names of methods you wish to have indexed.
+
+By default these will _also_ be the fields you can filter on. 
+
+Note that Meilisearch requires there to be an `id` field and it must be a string. 
 If you don't define one it will use string version of the `_id` your 
 document's `BSON::ObjectId`. 
 
 ```ruby
   # explicitly define the fields you want to be searchable
   # this should be an array of symbols
-  SEARCHABLE_ATTRIBUTES = %i[title body]
+  SEARCHABLE_ATTRIBUTES = %w[title body]
   # OR explicitly define the fields you DON'T want searchable 
   SEARCHABLE_ATTRIBUTES = searchable_attributes - [:created_at]
 ```
@@ -194,9 +197,16 @@ exclude any fields that are `Mongoid::Fields::ForeignKey` objects.
 
 #### Getting Extra Specific
 If your searchable data needs to by dynamically generated instead of 
-just taken directly from the `Mongoid::Document`'s attributes you can
-define a `search_indexable_hash` method on your class. This method 
-must return a hash, and that hash must include the following keys:
+just taken directly from the `Mongoid::Document`'s attributes or 
+existing methods you can define a `search_indexable_hash` method on your class. 
+
+Before you do, please note that as of v1.1 your `SEARCHABLE_ATTRIBUTES` 
+constant can contain fields and method names in its array of values. Making
+a method for each thing dynamically generated thing you want in the search 
+and then including it in SEARCHABLE_ATTRIBUTES is going to be 
+the easiest way of accomplishing this.
+
+Your `search_indexable_hash` must return a hash, and that hash must include the following keys:
 - `"id"` - a string that uniquely identifies the record
 - `"object_class"` the name of the class that this record corresponds to.
 
