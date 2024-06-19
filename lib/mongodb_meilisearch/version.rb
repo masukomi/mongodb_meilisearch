@@ -5,5 +5,5 @@ module MongodbMeilisearch
   # @note This library will adhere to strict semantic versioning.
   # See https://semver.org/
   #
-  VERSION = "1.2.0"
+  VERSION = "1.2.1"
 end
