@@ -43,7 +43,7 @@ The url below is the default one Meilisearch uses when run locally.
 
 ```bash
 SEARCH_ENABLED=true
-MEILISEARCH_API_KEY=<your api key here>
+MEILI_MASTER_KEY=<your api key here>
 MEILISEARCH_URL=http://127.0.0.1:7700
 
 ```

@@ -8,7 +8,8 @@ module Search
     def initialize
       if ENV.fetch("SEARCH_ENABLED", "true") == "true"
         url = ENV.fetch("MEILISEARCH_URL")
-        api_key = ENV.fetch("MEILISEARCH_API_KEY")
+        # MEILISEARCH_API_KEY is for mongodb_meilisearch v1.2.1 & earlier
+        api_key = ENV.fetch("MEILI_MASTER_KEY") || ENV.fetch("MEILISEARCH_API_KEY")
         timeout = ENV.fetch("MEILISEARCH_TIMEOUT", 10).to_i
         max_retries = ENV.fetch("MEILISEARCH_MAX_RETRIES", 2).to_i
         if url.present? && api_key.present?
