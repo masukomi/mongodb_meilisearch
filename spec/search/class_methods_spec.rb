@@ -21,14 +21,27 @@ RSpec.describe Search::ClassMethods do
       "nbHits" => 33
     }
   }
+  let(:search_index) { double(MeiliSearch::Index) }
+  let(:administratable_index) { double(MeiliSearch::Index) }
+  let(:admin_client) { double(MeiliSearch::Client) }
+  let(:search_client) { double(MeiliSearch::Client) }
+
+  before do
+    allow(admin_client).to(receive(:index).with(anything).and_return(administratable_index))
+    allow(search_client).to(receive(:index).with(anything).and_return(search_index))
+    allow(Search::Client.instance).to(receive(:admin_client).and_return(admin_client))
+    allow(Search::Client.instance).to(receive(:search_client).and_return(search_client))
+  end
 
   context "with basic test model" do
-    let(:search_index) { double("search_index") }
-
     before do
       allow(BasicTestModel).to(
         receive(:search_index)
           .and_return(search_index)
+      )
+      allow(BasicTestModel).to(
+        receive(:administratable_index)
+          .and_return(administratable_index)
       )
     end
 
@@ -55,7 +68,7 @@ RSpec.describe Search::ClassMethods do
     describe "#configure_attributes_and_index_if_needed!" do
       # rubocop:disable RSpec/ExampleLength
       it "creates an index if there isn't one" do
-        allow(search_index).to(
+        allow(administratable_index).to(
           receive(:get_filterable_attributes)
             .and_raise(
               ::MeiliSearch::ApiError.new(
@@ -65,22 +78,23 @@ RSpec.describe Search::ClassMethods do
               )
             )
         )
-        allow(search_index).to(
+        allow(administratable_index).to(
           receive(:wait_for_task)
             .and_return(true) # prolly not what it actually returns
         )
-        expect(Search::Client.instance).to(
+        expect(admin_client).to(
           receive(:create_index)
             .with("basic_test_model")
         )
         allow(BasicTestModel).to(receive(:set_sortable_attributes).and_return(true))
         allow(BasicTestModel).to(receive(:set_filterable_attributes).and_return(true))
+
         BasicTestModel.configure_attributes_and_index_if_needed!
       end
       # rubocop:enable RSpec/ExampleLength
 
       it "sets filterable attributes if needed" do
-        allow(search_index).to(
+        allow(administratable_index).to(
           receive(:get_filterable_attributes)
             .and_return([])
         )
@@ -91,7 +105,7 @@ RSpec.describe Search::ClassMethods do
       end
 
       it "sets sortable attributes if needed" do
-        allow(search_index).to(
+        allow(administratable_index).to(
           receive(:get_filterable_attributes)
             .and_return([])
         )
@@ -112,7 +126,7 @@ RSpec.describe Search::ClassMethods do
       let(:expected_fields) { BasicTestModel.default_searchable_attributes + [:object_class] }
 
       before do
-        allow(search_index).to(receive(:wait_for_task).and_return({bogus: :response}))
+        allow(administratable_index).to(receive(:wait_for_task).and_return({bogus: :response}))
       end
 
       context "with unfilterable test model" do
@@ -142,7 +156,7 @@ RSpec.describe Search::ClassMethods do
       end
 
       it "sends the default filterable attributes to meilisearch" do
-        expect(search_index).to(
+        expect(administratable_index).to(
           receive(:update_filterable_attributes)
             .with(expected_fields)
             .and_return({"taskUid" => "abcd1234"})
@@ -164,7 +178,7 @@ RSpec.describe Search::ClassMethods do
         end
 
         it "sends the user's filterable attributes to meilisearch" do
-          expect(search_index)
+          expect(administratable_index)
             .to(
               receive(:update_filterable_attributes)
                 .with(custom_filter_fields)
@@ -191,7 +205,7 @@ RSpec.describe Search::ClassMethods do
           end
 
           it "sends the user's sortable attributes to meilisearch" do
-            expect(search_index)
+            expect(administratable_index)
               .to(
                 receive(:update_sortable_attributes)
                   .with(custom_sort_fields)
@@ -297,6 +311,7 @@ RSpec.describe Search::ClassMethods do
     # rubocop:enable RSpec/MultipleMemoizedHelpers
   end
 
+  # rubocop:disable RSpec/MultipleMemoizedHelpers
   context "with extended test model" do
     it "gets the correct search index name" do
       expect(ExtendedTestModel.search_index_name).to(eq(ExtendedTestModel::SEARCH_INDEX_NAME))
@@ -317,8 +332,6 @@ RSpec.describe Search::ClassMethods do
     # should prevent us from ever seeing
     # results for classes other than the one initiating the search
     # UNLESS we set filtered_by_class: false
-    #
-    # rubocop:disable RSpec/MultipleMemoizedHelpers
     context "when using a multi-class index" do
       let(:raw_search_results) {
         {
@@ -469,7 +482,6 @@ RSpec.describe Search::ClassMethods do
       end
       # rubocop:enable RSpec/NestedGroups
     end
-    # rubocop:enable RSpec/MultipleMemoizedHelpers
   end
 
   context "with custom primary key" do
@@ -478,5 +490,6 @@ RSpec.describe Search::ClassMethods do
         .to(eq(CustomPrimaryKeyModel::PRIMARY_SEARCH_KEY))
     end
   end
+  # rubocop:enable RSpec/MultipleMemoizedHelpers
 end
 # rubocop:enable RSpec/MultipleMemoizedHelpers, RSpec/VerifiedDoubles

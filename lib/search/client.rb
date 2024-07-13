@@ -1,42 +1,136 @@
 require "singleton"
+require "logger"
 
 module Search
   class Client
     include Singleton
-    attr_reader :client
+    attr_reader :admin_client, :search_client
+    attr_accessor :logger
 
     def initialize
+      @logger = default_logger
       if ENV.fetch("SEARCH_ENABLED", "true") == "true"
-        url = ENV.fetch("MEILISEARCH_URL")
-        # MEILISEARCH_API_KEY is for mongodb_meilisearch v1.2.1 & earlier
-        api_key = ENV.fetch("MEILI_MASTER_KEY") || ENV.fetch("MEILISEARCH_API_KEY")
-        timeout = ENV.fetch("MEILISEARCH_TIMEOUT", 10).to_i
-        max_retries = ENV.fetch("MEILISEARCH_MAX_RETRIES", 2).to_i
-        if url.present? && api_key.present?
-          @client = MeiliSearch::Client.new(url, api_key,
-                                            timeout: timeout,
-                                            max_retries: max_retries)
-        else
-          Rails.logger.warn("UNABLE TO CONFIGURE SEARCH. Check env vars.")
-          @client = nil
-        end
+        initialize_clients
+        # WARNING: ⚠ clients MAY be nil depending on what api keys were provided
+        # In this case rails logger warnings and/or errors will have already
+        # been created.
+      else
+        @logger.info("SEARCH_ENABLED is not \"true\" - mongodb_meilisearch NOT initialized")
       end
     end
 
+    # Indicates if there is a client available to
+    # administration OR searches.
     def enabled?
-      !@client.nil?
+      !@admin_client.nil? || !@search_client.nil?
     end
 
+    # Indicates if there is a client available
+    # that has been configured with an admin key.
+    def admin_enabled?
+      !@admin_client.nil?
+    end
+
+    # @deprecated use search_client for searches
+    #   & admin_client for everything else
+    def client
+      @logger.info("Search::Client.instance.client is a deprecated method")
+      @admin_client || @search_client
+    end
+
+    # MOST of the method calls made against this singleton
+    # are just being passed through to our pre-initialized
+    # MeiliSearch::Client object
     def method_missing(m, *args, &block)
-      if @client.respond_to? m.to_sym
-        @client.send(m, *args, &block)
+      if @admin_client.respond_to? m.to_sym
+        @admin_client.send(m, *args, &block)
       else
-        raise ArgumentError.new("Method `#{m}` doesn't exist in #{@client.inspect}.")
+        raise ArgumentError.new("Method `#{m}` doesn't exist in #{@admin_client.inspect}.")
       end
     end
 
     def respond_to_missing?(method_name, include_private = false)
-      @client.respond_to?(method_name.to_sym) || super
+      @admin_client.respond_to?(method_name.to_sym) || super
+    end
+
+    def initialize_clients
+      # see what env vars they've configured
+      url = ENV.fetch("MEILISEARCH_URL")
+      # MEILISEARCH_API_KEY is for mongodb_meilisearch v1.2.1 & earlier
+      timeout = ENV.fetch("MEILISEARCH_TIMEOUT", 10).to_i
+      max_retries = ENV.fetch("MEILISEARCH_MAX_RETRIES", 2).to_i
+
+      master_api_key = ENV.fetch("MEILI_MASTER_KEY") || ENV.fetch("MEILISEARCH_MASTER_KEY")
+      search_api_key = ENV.fetch("MEILISEARCH_SEARCH_KEY", nil)
+      admin_api_key  = ENV.fetch("MEILISEARCH_ADMIN_KEY", nil)
+
+      # if there is a master key (and it's valid) we're guaranteed to have
+      # default api keys we can use for search & admin
+      if !master_api_key.nil? && (search_api_key.nil? || admin_api_key.nil?)
+        master_client = initialize_new_client(
+          url: url,
+          api_key: master_api_key,
+          timeout: timeout,
+          max_retries: max_retries
+        )
+        @logger.debug("initialized master client with master key: #{master_api_key[0..5]}…")
+        default_keys = get_default_keys(master_client)
+        search_api_key ||= default_keys[:search]
+        admin_api_key ||= default_keys[:admin]
+      end
+
+      if !admin_api_key.nil?
+        @admin_client = initialize_new_client(
+          url: url,
+          api_key: admin_api_key,
+          timeout: timeout,
+          max_retries: max_retries
+        )
+        @logger.debug("initialized admin client with admin key: #{admin_api_key[0..5]}…")
+      else
+        @logger.error("UNABLE TO CONFIGURE MEILISEARCH ADMINISTRATION CLIENT. Check env vars.")
+        @admin_client = nil
+      end
+
+      if !search_api_key.nil?
+        @search_client = initialize_new_client(
+          url: url,
+          api_key: search_api_key,
+          timeout: timeout,
+          max_retries: max_retries
+        )
+        @logger.debug("initialized search client with search key: #{search_api_key[0..5]}…")
+      else
+        @logger.error("UNABLE TO CONFIGURE GENERAL MEILISEARCH SEARCH CLIENT. Check env vars.")
+        @search_client = nil
+      end
+    rescue MeiliSearch::ApiError => e
+      @logger.error("MeiliSearch Api Error when attempting to list keys: #{e}")
+    end
+
+    def initialize_new_client(api_key:, url:, timeout:, max_retries:)
+      MeiliSearch::Client.new(url, api_key,
+                              timeout: timeout,
+                              max_retries: max_retries)
+    end
+
+    def get_default_keys(master_client)
+      keys = master_client.keys
+      response = {search: nil, admin: nil}
+
+      keys&.[]("results")&.each do |hash|
+        if hash["name"]   == "Default Search API Key"
+          response[:search] = hash["key"]
+        elsif hash["name"] == "Default Admin API Key"
+          response[:admin]  = hash["key"]
+        end
+      end
+      response
+    end
+
+    def default_logger
+      in_rails = Module.constants.include?(:Rails)
+      in_rails ? Rails.logger : Logger.new($stdout)
     end
   end
 end

@@ -3,7 +3,7 @@ module Search
     # Adds this record to the search index asynchronously
     def add_to_search
       self.class.configure_attributes_and_index_if_needed!
-      search_index.add_documents(
+      administratable_index.add_documents(
         [search_indexable_hash],
         primary_search_key.to_s
       )
@@ -12,7 +12,7 @@ module Search
     # Adds this record to the search index synchronously
     def add_to_search!
       self.class.configure_attributes_and_index_if_needed!
-      index     = search_index
+      index     = administratable_index
       documents = [search_indexable_hash]
       pk        = primary_search_key.to_s
       index.add_documents!(documents, pk)
@@ -20,7 +20,7 @@ module Search
 
     # Updates this record in the search index asynchronously
     def update_in_search
-      search_index.update_documents(
+      administratable_index.update_documents(
         [search_indexable_hash],
         primary_search_key
       )
@@ -28,7 +28,7 @@ module Search
 
     # Updates this record in the search index synchronously
     def update_in_search!
-      search_index.update_documents!(
+      administratable_index.update_documents!(
         [search_indexable_hash],
         primary_search_key
       )
@@ -36,12 +36,12 @@ module Search
 
     # Removes this record from the search asynchronously
     def remove_from_search
-      search_index.delete_document(send(primary_search_key).to_s)
+      administratable_index.delete_document(send(primary_search_key).to_s)
     end
 
     # Removes this record from the search synchronously
     def remove_from_search!
-      search_index.delete_document!(send(primary_search_key).to_s)
+      administratable_index.delete_document!(send(primary_search_key).to_s)
     end
 
     def searchable_attributes
@@ -86,10 +86,10 @@ module Search
       hash
     end
 
-    # A convenience method to ease accessing the search index
+    # A convenience method to ease accessing the administratable index
     # from the ClassMethods
-    def search_index
-      self.class.search_index
+    def administratable_index
+      self.class.administratable_index
     end
 
     # A convenience method to ease accessing the primary search key

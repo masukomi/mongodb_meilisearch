@@ -10,11 +10,11 @@ RSpec.describe Search::InstanceMethods do
     BasicTestModel.new(name: "Ruth Bader Ginsberg", description: "total badass", age: 87)
   }
   # rubocop:disable RSpec/VerifiedDoubles
-  let(:search_index) {
-    double("MeiliSearch::index")
+  let(:administratable_index) {
+    double(MeiliSearch::Index)
   }
   let(:search_client) {
-    double("Search::Client")
+    double(Search::Client)
   }
   # rubocop:enable RSpec/VerifiedDoubles
 
@@ -25,15 +25,15 @@ RSpec.describe Search::InstanceMethods do
           .and_return(search_client)
       )
       allow(BasicTestModel).to(
-        receive(:search_index)
-          .and_return(search_index)
+        receive(:administratable_index)
+          .and_return(administratable_index)
       )
       allow(BasicTestModel).to(receive(:configure_attributes_and_index_if_needed!))
     end
 
     it "guarantees index, sorting, and filtering are configured" do
       expect(BasicTestModel).to(receive(:configure_attributes_and_index_if_needed!))
-      allow(search_index).to(
+      allow(administratable_index).to(
         receive(:add_documents)
           .with(anything, anything)
           .and_return(true)
@@ -42,7 +42,7 @@ RSpec.describe Search::InstanceMethods do
     end
 
     it "adds the document to search asynchronously" do
-      expect(search_index).to(
+      expect(administratable_index).to(
         receive(:add_documents)
           .with(anything, anything)
           .and_return(true)
@@ -51,7 +51,7 @@ RSpec.describe Search::InstanceMethods do
     end
 
     it "is able to add a document synchronously" do
-      expect(search_index).to(
+      expect(administratable_index).to(
         receive(:add_documents!)
           .with(anything, anything)
           .and_return(true)
@@ -60,7 +60,7 @@ RSpec.describe Search::InstanceMethods do
     end
 
     it "is able to update a document in search asynchronously" do
-      expect(search_index).to(
+      expect(administratable_index).to(
         receive(:update_documents)
           .with(anything, anything)
           .and_return(true)
@@ -69,7 +69,7 @@ RSpec.describe Search::InstanceMethods do
     end
 
     it "is able to update a document in search synchronously" do
-      expect(search_index).to(
+      expect(administratable_index).to(
         receive(:update_documents!)
           .with([anything], anything)
           .and_return(true)
@@ -78,7 +78,7 @@ RSpec.describe Search::InstanceMethods do
     end
 
     it "is able to remove a document from search asynchronously" do
-      expect(search_index).to(
+      expect(administratable_index).to(
         receive(:delete_document)
           .with(instance.id.to_s)
           .and_return(true)
@@ -87,7 +87,7 @@ RSpec.describe Search::InstanceMethods do
     end
 
     it "is able to remove a document from search synchronously" do
-      expect(search_index).to(
+      expect(administratable_index).to(
         receive(:delete_document!)
           .with(instance.id.to_s)
           .and_return(true)

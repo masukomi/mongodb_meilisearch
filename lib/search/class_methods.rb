@@ -69,9 +69,15 @@ module Search
       class_index_name
     end
 
-    # @return [MeiliSearch::Index] the search index for this class
+    # @return [MeiliSearch::Index] the search-only search index for this class
     def search_index
-      Search::Client.instance.index(search_index_name)
+      Search::Client.instance.search_client.index(search_index_name)
+    end
+
+    # @return [MeiliSearch::Index] the search index for this class
+    # in a form that can modify the index
+    def administratable_index
+      Search::Client.instance.admin_client.index(search_index_name)
     end
 
     # MeiliSearch allows you to define the ranking of search results. Alas, this is not based
@@ -251,9 +257,9 @@ module Search
     #      search_indexable_hash
     def update_documents(updated_documents, async: true)
       if async
-        search_index.update_documents(updated_documents, primary_search_key)
+        administratable_index.update_documents(updated_documents, primary_search_key)
       else
-        search_index.update_documents!(updated_documents, primary_search_key)
+        administratable_index.update_documents!(updated_documents, primary_search_key)
       end
     end
 
@@ -263,9 +269,9 @@ module Search
     def add_documents(new_documents, async: true)
       configure_attributes_and_index_if_needed!
       if async
-        search_index.add_documents(new_documents, primary_search_key)
+        administratable_index.add_documents(new_documents, primary_search_key)
       else
-        search_index.add_documents!(new_documents, primary_search_key)
+        administratable_index.add_documents!(new_documents, primary_search_key)
       end
     end
 
@@ -286,14 +292,14 @@ module Search
     # A convenience method that wraps MeiliSearch::Index#stats
     # See https://www.meilisearch.com/docs/reference/api/stats for more info
     def search_stats
-      search_index.stats
+      administratable_index.stats
     end
 
     # @return [Integer] the number of documents in the search index
     # as reported via stats.
     # See https://www.meilisearch.com/docs/reference/api/stats for more info
     def searchable_documents
-      search_index.number_of_documents
+      administratable_index.number_of_documents
     end
 
     # @return [Boolean] indicating if search ids should be prefixed with the class name
@@ -309,19 +315,19 @@ module Search
     # you should use this, you're probably mistaken.
     # @warning this will delete the index and all documents in it
     def delete_index!
-      search_index.delete_index
+      administratable_index.delete_index
     end
 
     # Asynchronously deletes all documents from the search index
     # regardless of what model they're associated with.
     def delete_all_documents
-      search_index.delete_all_documents
+      administratable_index.delete_all_documents
     end
 
     # Synchronously deletes all documents from the search index
     # regardless of what model they're associated with.
     def delete_all_documents!
-      search_index.delete_all_documents!
+      administratable_index.delete_all_documents!
     end
 
     # Asynchronously delete & reindex all instances of this class.
@@ -395,11 +401,11 @@ module Search
     # @return [Array] - an array of attributes configured as sortable
     # in the index.
     def meilisearch_sortable_attributes
-      @_meilisearch_sortable_attributes ||= search_index.get_sortable_attributes
+      @_meilisearch_sortable_attributes ||= administratable_index.get_sortable_attributes
     end
 
     def meilisearch_filterable_attributes
-      @_meilisearch_filterable_attributes ||= search_index.get_filterable_attributes
+      @_meilisearch_filterable_attributes ||= administratable_index.get_filterable_attributes
     end
 
     def reset_cached_data!
@@ -421,7 +427,7 @@ module Search
         # this is expected to happen the first time an instance
         # of a new model is saved.
         raise unless e.message.match?(/Index `\S+` not found\./)
-        Search::Client.instance.create_index(search_index_name)
+        Search::Client.instance.admin_client.create_index(search_index_name)
       end
 
       return if indexes_filterable_attributes.include?("object_class")
@@ -434,13 +440,13 @@ module Search
     # which may take time. Best to run this in a background job
     # for large datasets.
     def set_filterable_attributes(new_attributes = filterable_attributes)
-      search_index.update_filterable_attributes(new_attributes)
+      administratable_index.update_filterable_attributes(new_attributes)
     end
 
     def set_filterable_attributes!(new_attributes = filterable_attributes)
       # meilisearch-ruby doesn't provide a synchronous version of this
       task = set_filterable_attributes(new_attributes)
-      search_index.wait_for_task(task["taskUid"])
+      administratable_index.wait_for_task(task["taskUid"])
     end
 
     # Updates the sortable attributes in the search index.
@@ -448,13 +454,13 @@ module Search
     # which may take time. Best to run this in a background job
     # for large datasets.
     def set_sortable_attributes(new_attributes = sortable_attributes)
-      search_index.update_sortable_attributes(new_attributes)
+      administratable_index.update_sortable_attributes(new_attributes)
     end
 
     def set_sortable_attributes!(new_attributes = sortable_attributes)
       # meilisearch-ruby doesn't provide a synchronous version of this
       task = set_sortable_attributes(new_attributes)
-      search_index.wait_for_task(task["taskUid"])
+      administratable_index.wait_for_task(task["taskUid"])
     end
 
     private
