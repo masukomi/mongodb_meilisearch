@@ -70,7 +70,7 @@ module Search
     end
 
     # @return [MeiliSearch::Index] the search-only search index for this class
-    def search_index
+    def searchable_index
       Search::Client.instance.search_client.index(search_index_name)
     end
 
@@ -102,7 +102,7 @@ module Search
     # @return [Hash] raw results directly from meilisearch-ruby gem
     #   This is a hash with paging information and more.
     def raw_search(search_string, options = search_options)
-      index = search_index
+      index = searchable_index
       index.search(search_string, options)
     end
 

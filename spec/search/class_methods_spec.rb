@@ -9,7 +9,7 @@ require "meilisearch"
 RSpec.describe Search::ClassMethods do
   # NOTE: things intentionally untested
   # - raw_search
-  # - search_index
+  # - searchable_index
   let(:query_string) { "a query string" }
   let(:search_result_metadata) {
     {
@@ -21,14 +21,14 @@ RSpec.describe Search::ClassMethods do
       "nbHits" => 33
     }
   }
-  let(:search_index) { double(MeiliSearch::Index) }
+  let(:searchable_index) { double(MeiliSearch::Index) }
   let(:administratable_index) { double(MeiliSearch::Index) }
   let(:admin_client) { double(MeiliSearch::Client) }
   let(:search_client) { double(MeiliSearch::Client) }
 
   before do
     allow(admin_client).to(receive(:index).with(anything).and_return(administratable_index))
-    allow(search_client).to(receive(:index).with(anything).and_return(search_index))
+    allow(search_client).to(receive(:index).with(anything).and_return(searchable_index))
     allow(Search::Client.instance).to(receive(:admin_client).and_return(admin_client))
     allow(Search::Client.instance).to(receive(:search_client).and_return(search_client))
   end
@@ -36,8 +36,8 @@ RSpec.describe Search::ClassMethods do
   context "with basic test model" do
     before do
       allow(BasicTestModel).to(
-        receive(:search_index)
-          .and_return(search_index)
+        receive(:searchable_index)
+          .and_return(searchable_index)
       )
       allow(BasicTestModel).to(
         receive(:administratable_index)
