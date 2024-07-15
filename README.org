@@ -6,6 +6,7 @@
   - [[#model-integration][Model Integration]]
   - [[#indexes][Indexes]]
   - [[#searching][Searching]]
+  - [[#upgrading][Upgrading]]
   - [[#development][Development]]
   - [[#license][License]]
   - [[#code-of-conduct][Code of Conduct]]
@@ -554,6 +555,24 @@ Pagy.new(
 )
 #+end_src
 
+** Upgrading
+*** From v1.x
+primary difference between v1.x and v2 is that =mongodb_meilisearch= no longer uses the Meilisearch master key [[https://www.meilisearch.com/docs/learn/security/basic_security][for security reasons]]. The /only/ thing it will use it for is to look up the default search API key and / or the default administrative API key.
+
+It now initializes 2 =Meilisearch::Client= objects: one for searching, one for administration, and all of the internal methods that interact with an index have been rewritten to interact with it via the correct client.
+
+
+Practically speaking, there are 3 significant differences from v1.x
+
+1. =MEILISEARCH_API_KEY= is no longer supported. It has been replaced with the official Meilisearch environment variable for the same purpose: =MEILI_MASTER_KEY=
+2. The master key is only used when an API key for search and / or administration is not provided. It is recommended that you provide =MEILISEARCH_SEARCH_KEY= & =MEILISEARCH_ADMIN_KEY= for those purposes. See "Finding your Search & Admin keys" above for more details.
+3. =Search::Client.instance.client= has been replaced with 2 clients with specific purposes
+   - =Search::Client::instance.search_client=
+   - =Search::Client::instance.admin_client=
+4. =ClassMethods.search_index= has been replaced with
+   - =ClassMethods.searchable_index=
+   - =ClassMethods.administratable_index=
+
 ** Development
 To contribute to this gem.
 
@@ -580,13 +599,11 @@ Bug reports and pull requests are welcome on GitHub at
 https://github.com/masukomi/mongodb_meilisearch. This project is
 intended to be a safe, welcoming space for collaboration, and
 contributors are expected to adhere to the
-[[https://github.com/masukomi/mongodb_meilisearch/blob/main/CODE_OF_CONDUCT.md][code
-of conduct]].
+[[https://github.com/masukomi/mongodb_meilisearch/blob/main/CODE_OF_CONDUCT.md][code of conduct]].
 
 ** License
 The gem is available as open source under the terms of the
-[[https://github.com/masukomi/mongodb_meilisearch/blob/main/LICENSE.txt][Server
-Side Public License]]. For those unfamiliar, the short version is that
+[[https://github.com/masukomi/mongodb_meilisearch/blob/main/LICENSE.txt][Server Side Public License]]. For those unfamiliar, the short version is that
 if you use it in a server side app you need to share all the code for
 that app and its infrastructure. It's like AGPL on steroids. Commercial
 licenses are available if you want to use this in a commercial setting
