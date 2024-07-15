@@ -14,6 +14,11 @@ module Search
         # WARNING: ⚠ clients MAY be nil depending on what api keys were provided
         # In this case rails logger warnings and/or errors will have already
         # been created.
+        unless admin_client || search_client
+          raise Search::Errors::ConfigurationError.new(
+            "Unable to configure any MeliSearch clients. Check env vars."
+          )
+        end
       else
         @logger.info("SEARCH_ENABLED is not \"true\" - mongodb_meilisearch NOT initialized")
       end
@@ -55,28 +60,20 @@ module Search
 
     def initialize_clients
       # see what env vars they've configured
-      url = ENV.fetch("MEILISEARCH_URL")
-      # MEILISEARCH_API_KEY is for mongodb_meilisearch v1.2.1 & earlier
-      timeout = ENV.fetch("MEILISEARCH_TIMEOUT", 10).to_i
-      max_retries = ENV.fetch("MEILISEARCH_MAX_RETRIES", 2).to_i
-
-      master_api_key = ENV.fetch("MEILI_MASTER_KEY") || ENV.fetch("MEILISEARCH_MASTER_KEY")
       search_api_key = ENV.fetch("MEILISEARCH_SEARCH_KEY", nil)
       admin_api_key  = ENV.fetch("MEILISEARCH_ADMIN_KEY", nil)
+      search_api_key = nil if search_api_key == ""
+      admin_api_key = nil if admin_api_key == ""
 
       # if there is a master key (and it's valid) we're guaranteed to have
       # default api keys we can use for search & admin
-      if !master_api_key.nil? && (search_api_key.nil? || admin_api_key.nil?)
-        master_client = initialize_new_client(
-          url: url,
-          api_key: master_api_key,
-          timeout: timeout,
-          max_retries: max_retries
-        )
-        @logger.debug("initialized master client with master key: #{master_api_key[0..5]}…")
-        default_keys = get_default_keys(master_client)
-        search_api_key ||= default_keys[:search]
-        admin_api_key ||= default_keys[:admin]
+      if search_api_key.nil? || admin_api_key.nil?
+        m_c = master_client
+        if m_c
+          default_keys = get_default_keys(m_c)
+          search_api_key ||= default_keys[:search]
+          admin_api_key ||= default_keys[:admin]
+        end
       end
 
       if !admin_api_key.nil?
@@ -114,8 +111,60 @@ module Search
                               max_retries: max_retries)
     end
 
-    def get_default_keys(master_client)
-      keys = master_client.keys
+    def master_client(master_api_key = nil)
+      master_api_key = nil if master_api_key == ""
+      master_api_key ||= ENV.fetch("MEILI_MASTER_KEY", nil)
+      if !url || !master_api_key
+
+        unless master_api_key
+          @logger.error(
+            "MEILI_MASTER_KEY is not set. Cannot create master client."
+          )
+        end
+
+        return nil
+      end
+
+      initialize_new_client(
+        url: url,
+        api_key: ENV.fetch("MEILI_MASTER_KEY"),
+        timeout: timeout,
+        max_retries: max_retries
+      )
+    end
+
+    def url
+      maybe_url = ENV.fetch("MEILISEARCH_URL", nil)
+      unless maybe_url
+        @logger.error(
+          "MEILI_MASTER_KEY is not set. Cannot create master client."
+        )
+      end
+      maybe_url
+    end
+
+    def timeout
+      ENV.fetch("MEILISEARCH_TIMEOUT", 10).to_i
+    end
+
+    def max_retries
+      ENV.fetch("MEILISEARCH_MAX_RETRIES", 2).to_i
+    end
+
+    def get_default_keys(m_c)
+      # NOTE: master_client /can/ return nil
+      if m_c.nil?
+        m_c = master_client
+      elsif m_c.is_a?(String)
+        m_c = master_client(m_c)
+      end
+
+      unless m_c
+        raise Search::Errors::ConfigurationError.new(
+          "Can't retrieve default keys without Master API Key & URL configured."
+        )
+      end
+      keys = m_c.keys
       response = {search: nil, admin: nil}
 
       keys&.[]("results")&.each do |hash|
