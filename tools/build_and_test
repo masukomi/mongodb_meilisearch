@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+where=$(rake build | sed -e "s/.*built to //" -e "s/\.$//" )
+if [ $? -eq 0 ]; then
+	echo "installing $where"
+	gem install $where
+else
+	echo "problems encountered building"
+	echo "run: rake build"
+fi
