@@ -60,6 +60,7 @@ module Search
     # _unless_ one is already defined. This gem relies on "object_class" being present
     # in returned results
     def search_indexable_hash
+      return @_search_indexable_hash if defined?(@_search_indexable_hash)
       klass = self.class
       # the to_s & to_sym is just safety in case someone
       # defined searchable_attributes as an array of strings
@@ -83,7 +84,7 @@ module Search
 
       hash["object_class"] = klass.name unless hash.has_key?("object_class")
       hash["original_document_id"] = _id.to_s if klass.has_class_prefixed_search_ids?
-      hash
+      @_search_indexable_hash = hash
     end
 
     # A convenience method to ease accessing the administratable index
