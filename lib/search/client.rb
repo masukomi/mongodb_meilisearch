@@ -43,21 +43,6 @@ module Search
       @admin_client || @search_client
     end
 
-    # MOST of the method calls made against this singleton
-    # are just being passed through to our pre-initialized
-    # MeiliSearch::Client object
-    def method_missing(m, *args, &block)
-      if @admin_client.respond_to? m.to_sym
-        @admin_client.send(m, *args, &block)
-      else
-        raise ArgumentError.new("Method `#{m}` doesn't exist in #{@admin_client.inspect}.")
-      end
-    end
-
-    def respond_to_missing?(method_name, include_private = false)
-      @admin_client.respond_to?(method_name.to_sym) || super
-    end
-
     def initialize_clients
       # see what env vars they've configured
       search_api_key = ENV.fetch("MEILISEARCH_SEARCH_KEY", nil)
