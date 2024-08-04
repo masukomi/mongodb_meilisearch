@@ -638,9 +638,9 @@ but not share all your source.
 
 ** Code of Conduct
 Everyone interacting in this project's codebases, issue trackers, chat
-rooms and mailing lists is expected to follow the
-[[https://github.com/masukomi/mongodb_meilisearch/blob/main/CODE_OF_CONDUCT.md][code
-of conduct]].
+rooms and mailing lists is expected to follow the [[https://github.com/masukomi/mongodb_meilisearch/blob/main/CODE_OF_CONDUCT.md][code of conduct]].
+
+It is furthermore /fully/ acknowledged that "master" is a problematic term that shouldn't be used. However, we're stuck with it until Meilisearch changes the name of that key.
 
 * Footnotes
 [fn:macos] MacOS users I have not found a way to successfully automatically Meilisearch with launchctl (brew services uses this) that allows it to see the ~MEILI_MASTER_KEY~ environment variable. As such, I can /not/ recommend using launchctl for running Meilisearch. Running it without a master key only works in development mode, and introduces complications.
