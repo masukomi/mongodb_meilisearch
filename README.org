@@ -97,6 +97,33 @@ This will return a hash with the keys you'll need.
 
 Use those keys in your environment. The next time the =Search::Client= is initialized it'll use them.
 
+***** Validating Search & Admin keys
+When switching between Meilisearch instances the same master key doesn't result in the same default admin and search keys. Being able to easily validate this is useful in situations like testing code against Meilisearch instances that are inside a Docker container /and/ in the Host OS.
+
+Practically speaking you may want to simply /not/ provide these keys during development, and only use the =MEILI_MASTER_KEY=. Just be sure to include them when talking to a production instance.
+
+#+begin_src ruby
+Search::Client.instance.validate_default_keys(ENV['MEILI_MASTER_KEY'])
+#+end_src
+
+This returns a hash like the following.
+
+- =status= is always either ="provided"= or ="missing"= and indicates if the =MEILISEARCH_SEARCH_KEY= or =MEILISEARCH_ADMIN_KEY= were found in the environment.
+- =matches= is always either =true= or =false=, and indicates if the provided Search & Admin keys (if any) match the defaults the current instance is returning.
+
+#+begin_src ruby
+{
+  :search_key=>{
+   :status=>"provided",
+   :matches=>true
+  },
+  :admin_key=>{
+    :status=>"provided",
+    :matches=>true
+  }
+}
+#+end_src
+
 ** Model Integration
 Add the following near the top of your model. Only the =extend= and
 =include= lines are required. This assumes your model also includes
