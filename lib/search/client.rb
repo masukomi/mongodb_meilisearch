@@ -6,10 +6,17 @@ module Search
     include Singleton
     attr_reader :admin_client, :search_client
     attr_accessor :logger
+    MASTER_KEY          = "MEILI_MASTER_KEY".freeze
+    SEARCH_KEY          = "MEILISEARCH_SEARCH_KEY".freeze
+    ADMIN_KEY           = "MEILISEARCH_ADMIN_KEY".freeze
+    URL_KEY             = "MEILISEARCH_URL".freeze
+    TIMEOUT_KEY         = "MEILISEARCH_TIMEOUT".freeze
+    MAX_RETRIES_KEY     = "MEILISEARCH_MAX_RETRIES".freeze
+    SEARCH_ENABLED_FLAG = "SEARCH_ENABLED".freeze
 
     def initialize
       @logger = default_logger
-      if ENV.fetch("SEARCH_ENABLED", "true") == "true"
+      if ENV.fetch(SEARCH_ENABLED_FLAG, "true") == "true"
         initialize_clients
         # WARNING: ⚠ clients MAY be nil depending on what api keys were provided
         # In this case rails logger warnings and/or errors will have already
@@ -20,7 +27,7 @@ module Search
           )
         end
       else
-        @logger.info("SEARCH_ENABLED is not \"true\" - mongodb_meilisearch NOT initialized")
+        @logger.info("#{SEARCH_ENABLED_KEY} is not \"true\" - mongodb_meilisearch NOT initialized")
       end
     end
 
@@ -45,8 +52,8 @@ module Search
 
     def initialize_clients
       # see what env vars they've configured
-      search_api_key = ENV.fetch("MEILISEARCH_SEARCH_KEY", nil)
-      admin_api_key  = ENV.fetch("MEILISEARCH_ADMIN_KEY", nil)
+      search_api_key = ENV.fetch(SEARCH_KEY, nil)
+      admin_api_key  = ENV.fetch(ADMIN_KEY, nil)
       search_api_key = nil if search_api_key == ""
       admin_api_key = nil if admin_api_key == ""
 
@@ -98,12 +105,12 @@ module Search
 
     def master_client(master_api_key = nil)
       master_api_key = nil if master_api_key == ""
-      master_api_key ||= ENV.fetch("MEILI_MASTER_KEY", nil)
+      master_api_key ||= ENV.fetch(MASTER_KEY, nil)
       if !url || !master_api_key
 
         unless master_api_key
           @logger.error(
-            "MEILI_MASTER_KEY is not set. Cannot create master client."
+            "#{MASTER_KEY} is not set. Cannot create master client."
           )
         end
 
@@ -112,28 +119,28 @@ module Search
 
       initialize_new_client(
         url: url,
-        api_key: ENV.fetch("MEILI_MASTER_KEY"),
+        api_key: ENV.fetch(MASTER_KEY),
         timeout: timeout,
         max_retries: max_retries
       )
     end
 
     def url
-      maybe_url = ENV.fetch("MEILISEARCH_URL", nil)
+      maybe_url = ENV.fetch(URL_KEY, nil)
       unless maybe_url
         @logger.error(
-          "MEILI_MASTER_KEY is not set. Cannot create master client."
+          "#{MASTER_KEY} is not set. Cannot create master client."
         )
       end
       maybe_url
     end
 
     def timeout
-      ENV.fetch("MEILISEARCH_TIMEOUT", 10).to_i
+      ENV.fetch(TIMEOUT_KEY, 10).to_i
     end
 
     def max_retries
-      ENV.fetch("MEILISEARCH_MAX_RETRIES", 2).to_i
+      ENV.fetch(MAX_RETRIES_KEY, 2).to_i
     end
 
     def get_default_keys(m_c)
@@ -160,6 +167,28 @@ module Search
         end
       end
       response
+    end
+
+    # Validates that the keys keys provided for search & admin
+    # correspond to the default keys Meilisearch returns
+    # @param [String] m_c - the Meilisearch Master Key to use.
+    #                 This is most likely found in ENV['MEILI_MASTER_KEY']
+    # @return [Hash[Hash]]
+    def validate_default_keys(m_c)
+      default_keys = get_default_keys(m_c)
+      search_key = ENV.fetch(SEARCH_KEY, nil)
+      admin_key = ENV.fetch(ADMIN_KEY, nil)
+
+      {
+        search_key: {
+          status: search_key.nil? ? "missing" : "provided",
+          matches: default_keys[:search] == search_key
+        },
+        admin_key: {
+          status: admin_key.nil? ? "missing" : "provided",
+          matches: default_keys[:admin] == admin_key
+        }
+      }
     end
 
     def default_logger
