@@ -31,12 +31,8 @@ Gem::Specification.new do |spec|
   # spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  # TODO: remove rails dependency.
-  #  This is mostly just there for .blank? and .present? but I'm not sure
-  #  if I've accidentally add any other dependencies without more tests.
-  spec.add_dependency "rails"
   spec.add_dependency "meilisearch"
-  spec.add_dependency "mongoid", "~> 7.0"
+  spec.add_dependency "mongoid", ">= 7.0"
 
   spec.add_development_dependency "rspec"
   spec.add_development_dependency "dotenv"
