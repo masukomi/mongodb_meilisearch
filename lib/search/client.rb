@@ -1,5 +1,6 @@
 require "singleton"
 require "logger"
+require_relative "errors"
 
 module Search
   class Client
